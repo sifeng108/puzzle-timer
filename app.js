@@ -1,13 +1,59 @@
+// ================================
+// 常量定义
+// ================================
 const DB_NAME = 'PuzzleTimerDB';
 const DB_VERSION = 1;
+const DEFAULT_COUNTDOWN_MINUTES = 15;
+const TIMER_UPDATE_INTERVAL = 1000; // 1秒
 
+// ================================
+// 全局状态变量
+// ================================
 let db = null;
 let currentPuzzle = null;
 let timerInterval = null;
 let countdownInterval = null;
 let currentSession = null;
 let countdownEndTime = null;
-let countdownMinutes = 15;
+let countdownMinutes = DEFAULT_COUNTDOWN_MINUTES;
+
+// ================================
+// 工具函数
+// ================================
+
+// 错误处理工具函数
+function handleError(error, context = 'Unknown') {
+  console.error(`[${context}] Error:`, error);
+  
+  // 在生产环境中，可以发送错误到监控服务
+  // 这里仅记录到控制台
+  if (typeof error === 'object' && error.message) {
+    console.error(`Error message: ${error.message}`);
+  }
+  
+  // 可以添加用户友好的错误提示
+  // showToast(`操作失败: ${context}`);
+}
+
+// 安全执行函数，捕获并处理异常
+function safeExecute(fn, context = 'Unknown') {
+  try {
+    return fn();
+  } catch (error) {
+    handleError(error, context);
+    return null;
+  }
+}
+
+// 异步安全执行
+async function safeExecuteAsync(fn, context = 'Unknown') {
+  try {
+    return await fn();
+  } catch (error) {
+    handleError(error, context);
+    return null;
+  }
+}
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -63,7 +109,7 @@ function getTotalTime(puzzle) {
 }
 
 function playSound() {
-  try {
+  return safeExecute(() => {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
@@ -80,9 +126,7 @@ function playSound() {
     
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + 0.5);
-  } catch (e) {
-    console.error('Failed to play sound:', e);
-  }
+  }, 'playSound');
 }
 
 function savePuzzle(puzzle) {
@@ -139,25 +183,37 @@ function renderPuzzleList(puzzles) {
   console.log('renderPuzzleList called with puzzles:', puzzles);
   const listContainer = document.getElementById('puzzle-list');
   
-  // 完全清空列表容器
-  listContainer.innerHTML = '';
+  // 使用更安全的方式清空列表容器
+  while (listContainer.firstChild) {
+    listContainer.removeChild(listContainer.firstChild);
+  }
   
   if (puzzles.length === 0) {
     console.log('No puzzles found, showing empty state');
-    // 创建并显示空状态
+    // 创建并显示空状态 - 使用DOM API替代innerHTML
     const emptyDiv = document.createElement('div');
     emptyDiv.className = 'empty-state';
     emptyDiv.id = 'empty-state';
-    emptyDiv.innerHTML = `
-      <div class="empty-icon">🧩</div>
-      <p>还没有拼图记录</p>
-      <p class="empty-hint">点击上方输入框添加第一个拼图</p>
-    `;
+    
+    const iconDiv = document.createElement('div');
+    iconDiv.className = 'empty-icon';
+    iconDiv.textContent = '🧩';
+    
+    const messageP = document.createElement('p');
+    messageP.textContent = '还没有拼图记录';
+    
+    const hintP = document.createElement('p');
+    hintP.className = 'empty-hint';
+    hintP.textContent = '点击上方输入框添加第一个拼图';
+    
+    emptyDiv.appendChild(iconDiv);
+    emptyDiv.appendChild(messageP);
+    emptyDiv.appendChild(hintP);
     listContainer.appendChild(emptyDiv);
   } else {
     console.log(`Rendering ${puzzles.length} puzzles`);
     
-    // 渲染拼图列表
+    // 渲染拼图列表 - 使用DOM API替代innerHTML
     puzzles.forEach(puzzle => {
       const totalTime = formatTime(getTotalTime(puzzle));
       let subtitle = '';
@@ -172,16 +228,41 @@ function renderPuzzleList(puzzles) {
       const itemDiv = document.createElement('div');
       itemDiv.className = 'puzzle-item';
       itemDiv.dataset.id = puzzle.id;
-      itemDiv.innerHTML = `
-        <div class="puzzle-item-main">
-          <div class="puzzle-item-name">${escapeHtml(puzzle.name)}</div>
-          ${subtitle ? `<div class="puzzle-item-subtitle">${escapeHtml(subtitle)}</div>` : ''}
-        </div>
-        <div class="puzzle-item-actions">
-          <span class="puzzle-item-time">${totalTime}</span>
-          <button class="btn-delete-item" data-id="${puzzle.id}" title="删除拼图">×</button>
-        </div>
-      `;
+      
+      const mainDiv = document.createElement('div');
+      mainDiv.className = 'puzzle-item-main';
+      
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'puzzle-item-name';
+      nameDiv.textContent = puzzle.name;
+      
+      mainDiv.appendChild(nameDiv);
+      
+      if (subtitle) {
+        const subtitleDiv = document.createElement('div');
+        subtitleDiv.className = 'puzzle-item-subtitle';
+        subtitleDiv.textContent = subtitle;
+        mainDiv.appendChild(subtitleDiv);
+      }
+      
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'puzzle-item-actions';
+      
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'puzzle-item-time';
+      timeSpan.textContent = totalTime;
+      
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn-delete-item';
+      deleteBtn.dataset.id = puzzle.id;
+      deleteBtn.title = '删除拼图';
+      deleteBtn.textContent = '×';
+      
+      actionsDiv.appendChild(timeSpan);
+      actionsDiv.appendChild(deleteBtn);
+      
+      itemDiv.appendChild(mainDiv);
+      itemDiv.appendChild(actionsDiv);
       
       listContainer.appendChild(itemDiv);
     });
@@ -224,18 +305,44 @@ function updateStats() {
 function renderSessions() {
   const sessionList = document.getElementById('session-list');
   
+  // 清空会话列表
+  while (sessionList.firstChild) {
+    sessionList.removeChild(sessionList.firstChild);
+  }
+  
   if (!currentPuzzle || !currentPuzzle.sessions || currentPuzzle.sessions.length === 0) {
-    sessionList.innerHTML = '<div class="empty-sessions"><p>暂无分段记录</p></div>';
+    // 使用DOM API创建空状态
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-sessions';
+    
+    const emptyP = document.createElement('p');
+    emptyP.textContent = '暂无分段记录';
+    
+    emptyDiv.appendChild(emptyP);
+    sessionList.appendChild(emptyDiv);
     return;
   }
   
   const sessions = [...currentPuzzle.sessions].reverse();
-  sessionList.innerHTML = sessions.map(session => `
-    <div class="session-item">
-      <div class="session-time">${formatTime(session.duration)}</div>
-      <div class="session-date">${formatDate(session.startTime)}</div>
-    </div>
-  `).join('');
+  
+  // 使用DOM API创建会话项
+  sessions.forEach(session => {
+    const sessionItem = document.createElement('div');
+    sessionItem.className = 'session-item';
+    
+    const timeDiv = document.createElement('div');
+    timeDiv.className = 'session-time';
+    timeDiv.textContent = formatTime(session.duration);
+    
+    const dateDiv = document.createElement('div');
+    dateDiv.className = 'session-date';
+    dateDiv.textContent = formatDate(session.startTime);
+    
+    sessionItem.appendChild(timeDiv);
+    sessionItem.appendChild(dateDiv);
+    
+    sessionList.appendChild(sessionItem);
+  });
 }
 
 function startTimer() {
@@ -257,7 +364,7 @@ function startTimer() {
     const elapsed = Date.now() - startTime;
     currentSession.duration = elapsed;
     document.getElementById('current-time').textContent = formatTime(elapsed);
-  }, 1000);
+  }, TIMER_UPDATE_INTERVAL);
   
   document.getElementById('timer-btn').textContent = '结束计时';
   document.getElementById('timer-btn').classList.remove('start');
@@ -292,7 +399,7 @@ function startCountdown() {
     } else {
       countdownTimeEl.classList.remove('warning', 'danger');
     }
-  }, 1000);
+  }, TIMER_UPDATE_INTERVAL);
   
   document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
 }
