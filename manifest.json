@@ -2,7 +2,7 @@
   "name": "拼图计时器",
   "short_name": "拼图计时",
   "description": "记录拼图分段时间，防止沉迷的计时器应用",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0f0f1a",
   "theme_color": "#1a1a2e",
