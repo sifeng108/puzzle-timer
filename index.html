@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+  <title>拼图计时器</title>
+</head>
+<body>
+  <!-- 首页 -->
+  <div id="page-home" class="page active">
+    <header class="header">
+      <h1 class="title">拼图计时器</h1>
+    </header>
+    
+    <div class="content">
+      <!-- 添加拼图 -->
+      <div class="add-section">
+        <input 
+          type="text" 
+          id="puzzle-name-input" 
+          placeholder="输入拼图名称..." 
+          class="input-text"
+          maxlength="30"
+        >
+        <button id="add-puzzle-btn" class="btn-primary">添加</button>
+      </div>
+      
+      <!-- 拼图列表 -->
+      <div id="puzzle-list" class="list-container">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">🧩</div>
+          <p>还没有拼图记录</p>
+          <p class="empty-hint">点击上方输入框添加第一个拼图</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 详情页 -->
+  <div id="page-detail" class="page">
+    <header class="header">
+      <button id="back-btn" class="btn-back">←</button>
+      <h1 class="title" id="detail-title">拼图详情</h1>
+      <div class="header-actions">
+        <button id="delete-btn" class="btn-delete">删除</button>
+      </div>
+    </header>
+    
+    <div class="content">
+      <!-- 统计信息 -->
+      <div class="stats-card">
+        <div class="stat-item">
+          <div class="stat-value" id="total-time">00:00:00</div>
+          <div class="stat-label">总用时</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <div class="stat-value" id="session-count">0</div>
+          <div class="stat-label">分段数</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <div class="stat-value" id="avg-time">00:00:00</div>
+          <div class="stat-label">平均时长</div>
+        </div>
+      </div>
+
+      <!-- 计时按钮 -->
+      <div class="timer-section">
+        <div class="current-time" id="current-time">00:00:00</div>
+        <button id="timer-btn" class="btn-timer">开始计时</button>
+      </div>
+
+      <!-- 倒计时设置 -->
+      <div class="countdown-section">
+        <label class="checkbox-label">
+          <input type="checkbox" id="countdown-enabled">
+          <span class="checkmark"></span>
+          <span>启用防沉迷提醒</span>
+        </label>
+        
+        <div class="countdown-options" id="countdown-options">
+          <div class="countdown-presets">
+            <button class="btn-preset active" data-minutes="15">15分钟</button>
+            <button class="btn-preset" data-minutes="30">30分钟</button>
+            <button class="btn-preset" data-minutes="45">45分钟</button>
+            <button class="btn-preset" data-minutes="60">60分钟</button>
+          </div>
+          <div class="countdown-display" id="countdown-display">
+            <div class="countdown-label">剩余时间</div>
+            <div class="countdown-time" id="countdown-time">--:--:--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分段时间列表 -->
+      <div class="section">
+        <h2 class="section-title">分段记录</h2>
+        <div id="session-list" class="session-list">
+          <div class="empty-sessions">
+            <p>暂无分段记录</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除确认弹窗 -->
+  <div id="modal-delete" class="modal">
+    <div class="modal-content">
+      <h3>确认删除</h3>
+      <p>确定要删除这个拼图记录吗？此操作无法撤销。</p>
+      <div class="modal-actions">
+        <button id="cancel-delete" class="btn-secondary">取消</button>
+        <button id="confirm-delete" class="btn-danger">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提醒弹窗 -->
+  <div id="modal-reminder" class="modal">
+    <div class="modal-content reminder">
+      <div class="reminder-icon">⏰</div>
+      <h3>时间到！</h3>
+      <p>已经拼了很长时间，休息一下吧！</p>
+      <div class="modal-actions">
+        <button id="close-reminder" class="btn-primary">知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then(registration => {
+      console.log('Service Worker registered:', registration);
+    })
+    .catch(error => {
+      console.log('Service Worker registration failed:', error);
+    });
+}
+</script>
+<script src="app.js"></script>
+</body>
+</html>
