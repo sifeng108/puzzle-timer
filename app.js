@@ -13,10 +13,14 @@ function openDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      console.error('DB open error:', request.error);
+      reject(request.error);
+    };
     
     request.onsuccess = () => {
       db = request.result;
+      console.log('Database initialized successfully');
       resolve(db);
     };
     
@@ -81,18 +85,20 @@ function playSound() {
   }
 }
 
-async function savePuzzle(puzzle) {
+function savePuzzle(puzzle) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(['puzzles'], 'readwrite');
     const store = transaction.objectStore('puzzles');
     const request = store.put(puzzle);
     
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      setTimeout(() => resolve(puzzle), 0);
+    };
     request.onerror = () => reject(request.error);
   });
 }
 
-async function getPuzzles() {
+function getPuzzles() {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(['puzzles'], 'readonly');
     const store = transaction.objectStore('puzzles');
@@ -117,41 +123,56 @@ async function getPuzzleById(id) {
   });
 }
 
-async function deletePuzzle(id) {
+function deletePuzzle(id) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(['puzzles'], 'readwrite');
     const store = transaction.objectStore('puzzles');
     const request = store.delete(id);
     
-    request.onsuccess = () => resolve();
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
     request.onerror = () => reject(request.error);
   });
 }
 
 function renderPuzzleList(puzzles) {
+  console.log('renderPuzzleList called with puzzles:', puzzles);
   const listContainer = document.getElementById('puzzle-list');
-  const emptyState = document.getElementById('empty-state');
+  
+  // 完全清空列表容器
+  listContainer.innerHTML = '';
   
   if (puzzles.length === 0) {
-    emptyState.style.display = 'flex';
-    listContainer.innerHTML = '';
-    listContainer.appendChild(emptyState);
-    return;
-  }
-  
-  emptyState.style.display = 'none';
-  listContainer.innerHTML = puzzles.map(puzzle => {
-    const totalTime = formatTime(getTotalTime(puzzle));
-    let subtitle = '';
-    if (puzzle.brand && puzzle.pieces) {
-      subtitle = `${puzzle.brand} · ${puzzle.pieces}片`;
-    } else if (puzzle.brand) {
-      subtitle = puzzle.brand;
-    } else if (puzzle.pieces) {
-      subtitle = `${puzzle.pieces}片`;
-    }
-    return `
-      <div class="puzzle-item" data-id="${puzzle.id}">
+    console.log('No puzzles found, showing empty state');
+    // 创建并显示空状态
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-state';
+    emptyDiv.id = 'empty-state';
+    emptyDiv.innerHTML = `
+      <div class="empty-icon">🧩</div>
+      <p>还没有拼图记录</p>
+      <p class="empty-hint">点击上方输入框添加第一个拼图</p>
+    `;
+    listContainer.appendChild(emptyDiv);
+  } else {
+    console.log(`Rendering ${puzzles.length} puzzles`);
+    
+    // 渲染拼图列表
+    puzzles.forEach(puzzle => {
+      const totalTime = formatTime(getTotalTime(puzzle));
+      let subtitle = '';
+      if (puzzle.brand && puzzle.pieces) {
+        subtitle = `${puzzle.brand} · ${puzzle.pieces}片`;
+      } else if (puzzle.brand) {
+        subtitle = puzzle.brand;
+      } else if (puzzle.pieces) {
+        subtitle = `${puzzle.pieces}片`;
+      }
+      
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'puzzle-item';
+      itemDiv.dataset.id = puzzle.id;
+      itemDiv.innerHTML = `
         <div class="puzzle-item-main">
           <div class="puzzle-item-name">${escapeHtml(puzzle.name)}</div>
           ${subtitle ? `<div class="puzzle-item-subtitle">${escapeHtml(subtitle)}</div>` : ''}
@@ -160,9 +181,11 @@ function renderPuzzleList(puzzles) {
           <span class="puzzle-item-time">${totalTime}</span>
           <button class="btn-delete-item" data-id="${puzzle.id}" title="删除拼图">×</button>
         </div>
-      </div>
-    `;
-  }).join('');
+      `;
+      
+      listContainer.appendChild(itemDiv);
+    });
+  }
 }
 
 function escapeHtml(str) {
@@ -298,6 +321,8 @@ function stopTimer() {
   savePuzzle(currentPuzzle).then(() => {
     updateStats();
     renderSessions();
+    // 刷新拼图列表（更新总时间显示）
+    getPuzzles().then(renderPuzzleList);
   });
   
   document.getElementById('current-time').textContent = '00:00:00';
@@ -326,6 +351,16 @@ async function init() {
   const puzzles = await getPuzzles();
   renderPuzzleList(puzzles);
   
+  // 刷新按钮
+  document.getElementById('refresh-btn').addEventListener('click', async () => {
+    try {
+      const puzzles = await getPuzzles();
+      renderPuzzleList(puzzles);
+    } catch (e) {
+      console.error('Refresh error:', e);
+    }
+  });
+  
   document.getElementById('add-puzzle-btn').addEventListener('click', async () => {
     const nameInput = document.getElementById('puzzle-name-input');
     const brandInput = document.getElementById('puzzle-brand-input');
@@ -352,8 +387,11 @@ async function init() {
     brandInput.value = '';
     piecesInput.value = '';
     
-    const puzzles = await getPuzzles();
-    renderPuzzleList(puzzles);
+    // 等待数据写入完成
+    setTimeout(async () => {
+      const puzzles = await getPuzzles();
+      renderPuzzleList(puzzles);
+    }, 50);
   });
   
   // 添加拼图（名称输入框回车）
