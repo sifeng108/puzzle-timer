@@ -23,11 +23,27 @@
         <input 
           type="text" 
           id="puzzle-name-input" 
-          placeholder="输入拼图名称..." 
+          placeholder="拼图名称*..." 
           class="input-text"
           maxlength="30"
         >
-        <button id="add-puzzle-btn" class="btn-primary">添加</button>
+        <div class="add-row">
+          <input 
+            type="number" 
+            id="puzzle-pieces-input" 
+            placeholder="片数*..." 
+            class="input-text input-small"
+            min="1"
+          >
+          <input 
+            type="text" 
+            id="puzzle-brand-input" 
+            placeholder="品牌..." 
+            class="input-text input-small"
+            maxlength="20"
+          >
+          <button id="add-puzzle-btn" class="btn-primary btn-small">添加</button>
+        </div>
       </div>
       
       <!-- 拼图列表 -->
@@ -36,6 +52,18 @@
           <div class="empty-icon">🧩</div>
           <p>还没有拼图记录</p>
           <p class="empty-hint">点击上方输入框添加第一个拼图</p>
+        </div>
+      </div>
+      
+      <!-- 列表删除确认弹窗 -->
+      <div id="modal-delete-list" class="modal">
+        <div class="modal-content">
+          <h3>确认删除</h3>
+          <p id="delete-list-message">确定要删除这个拼图吗？此操作无法撤销。</p>
+          <div class="modal-actions">
+            <button id="cancel-delete-list" class="btn-secondary">取消</button>
+            <button id="confirm-delete-list" class="btn-danger">删除</button>
+          </div>
         </div>
       </div>
     </div>
@@ -52,6 +80,19 @@
     </header>
     
     <div class="content">
+      <!-- 拼图信息 -->
+      <div class="puzzle-info-card" id="puzzle-info-card" style="display: none;">
+        <div class="puzzle-info-item">
+          <span class="puzzle-info-label">品牌</span>
+          <span class="puzzle-info-value" id="puzzle-brand">-</span>
+        </div>
+        <div class="puzzle-info-divider"></div>
+        <div class="puzzle-info-item">
+          <span class="puzzle-info-label">片数</span>
+          <span class="puzzle-info-value" id="puzzle-pieces">-</span>
+        </div>
+      </div>
+      
       <!-- 统计信息 -->
       <div class="stats-card">
         <div class="stat-item">
@@ -90,6 +131,16 @@
             <button class="btn-preset" data-minutes="30">30分钟</button>
             <button class="btn-preset" data-minutes="45">45分钟</button>
             <button class="btn-preset" data-minutes="60">60分钟</button>
+          </div>
+          <div class="custom-countdown">
+            <input 
+              type="number" 
+              id="custom-minutes-input" 
+              placeholder="自定义分钟..." 
+              class="input-text input-small"
+              min="1"
+            >
+            <button id="set-custom-btn" class="btn-secondary btn-small">设置</button>
           </div>
           <div class="countdown-display" id="countdown-display">
             <div class="countdown-label">剩余时间</div>

@@ -142,12 +142,23 @@ function renderPuzzleList(puzzles) {
   emptyState.style.display = 'none';
   listContainer.innerHTML = puzzles.map(puzzle => {
     const totalTime = formatTime(getTotalTime(puzzle));
+    let subtitle = '';
+    if (puzzle.brand && puzzle.pieces) {
+      subtitle = `${puzzle.brand} · ${puzzle.pieces}片`;
+    } else if (puzzle.brand) {
+      subtitle = puzzle.brand;
+    } else if (puzzle.pieces) {
+      subtitle = `${puzzle.pieces}片`;
+    }
     return `
       <div class="puzzle-item" data-id="${puzzle.id}">
-        <div class="puzzle-item-name">${escapeHtml(puzzle.name)}</div>
-        <div class="puzzle-item-info">
+        <div class="puzzle-item-main">
+          <div class="puzzle-item-name">${escapeHtml(puzzle.name)}</div>
+          ${subtitle ? `<div class="puzzle-item-subtitle">${escapeHtml(subtitle)}</div>` : ''}
+        </div>
+        <div class="puzzle-item-actions">
           <span class="puzzle-item-time">${totalTime}</span>
-          <span class="puzzle-item-arrow">→</span>
+          <button class="btn-delete-item" data-id="${puzzle.id}" title="删除拼图">×</button>
         </div>
       </div>
     `;
@@ -316,35 +327,73 @@ async function init() {
   renderPuzzleList(puzzles);
   
   document.getElementById('add-puzzle-btn').addEventListener('click', async () => {
-    const input = document.getElementById('puzzle-name-input');
-    const name = input.value.trim();
+    const nameInput = document.getElementById('puzzle-name-input');
+    const brandInput = document.getElementById('puzzle-brand-input');
+    const piecesInput = document.getElementById('puzzle-pieces-input');
+    
+    const name = nameInput.value.trim();
     
     if (!name) {
-      input.focus();
+      nameInput.focus();
       return;
     }
     
     const puzzle = {
       id: generateId(),
       name,
+      brand: brandInput.value.trim() || null,
+      pieces: piecesInput.value ? parseInt(piecesInput.value) : null,
       createdAt: Date.now(),
       sessions: []
     };
     
     await savePuzzle(puzzle);
-    input.value = '';
+    nameInput.value = '';
+    brandInput.value = '';
+    piecesInput.value = '';
     
     const puzzles = await getPuzzles();
     renderPuzzleList(puzzles);
   });
   
+  // 添加拼图（名称输入框回车）
   document.getElementById('puzzle-name-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       document.getElementById('add-puzzle-btn').click();
     }
   });
   
+  // 品牌和片数输入框回车也触发添加
+  document.getElementById('puzzle-brand-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      document.getElementById('add-puzzle-btn').click();
+    }
+  });
+  
+  document.getElementById('puzzle-pieces-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      document.getElementById('add-puzzle-btn').click();
+    }
+  });
+  
   document.getElementById('puzzle-list').addEventListener('click', async (e) => {
+    // 检查是否点击的是删除按钮
+    const deleteBtn = e.target.closest('.btn-delete-item');
+    if (deleteBtn) {
+      e.stopPropagation();
+      const puzzleId = deleteBtn.dataset.id;
+      const puzzle = await getPuzzleById(puzzleId);
+      if (puzzle) {
+        document.getElementById('delete-list-message').textContent = 
+          `确定要删除"${puzzle.name}"吗？所有计时数据将被删除，此操作无法撤销。`;
+        document.getElementById('modal-delete-list').classList.add('show');
+        // 存储要删除的ID
+        document.getElementById('confirm-delete-list').dataset.deleteId = puzzleId;
+      }
+      return;
+    }
+    
+    // 检查是否点击的是拼图项
     const item = e.target.closest('.puzzle-item');
     if (!item) return;
     
@@ -353,9 +402,48 @@ async function init() {
     
     if (currentPuzzle) {
       document.getElementById('detail-title').textContent = currentPuzzle.name;
+      
+      // 显示拼图信息
+      const infoCard = document.getElementById('puzzle-info-card');
+      const brandEl = document.getElementById('puzzle-brand');
+      const piecesEl = document.getElementById('puzzle-pieces');
+      
+      if (currentPuzzle.brand || currentPuzzle.pieces) {
+        infoCard.style.display = 'flex';
+        brandEl.textContent = currentPuzzle.brand || '-';
+        piecesEl.textContent = currentPuzzle.pieces ? `${currentPuzzle.pieces}片` : '-';
+      } else {
+        infoCard.style.display = 'none';
+      }
+      
       updateStats();
       renderSessions();
       showPage('page-detail');
+    }
+  });
+  
+  // 列表删除确认
+  document.getElementById('cancel-delete-list').addEventListener('click', () => {
+    hideModal('modal-delete-list');
+  });
+  
+  document.getElementById('confirm-delete-list').addEventListener('click', async () => {
+    const deleteId = document.getElementById('confirm-delete-list').dataset.deleteId;
+    if (deleteId) {
+      await deletePuzzle(deleteId);
+      hideModal('modal-delete-list');
+      
+      // 如果当前在详情页且删除的是当前拼图，返回首页
+      if (currentPuzzle && currentPuzzle.id === deleteId) {
+        currentPuzzle = null;
+        if (timerInterval) {
+          stopTimer();
+        }
+        showPage('page-home');
+      }
+      
+      const puzzles = await getPuzzles();
+      renderPuzzleList(puzzles);
     }
   });
   
@@ -413,6 +501,28 @@ async function init() {
       btn.classList.add('active');
       countdownMinutes = parseInt(btn.dataset.minutes);
     });
+  });
+  
+  document.getElementById('set-custom-btn').addEventListener('click', () => {
+    const customInput = document.getElementById('custom-minutes-input');
+    const minutes = parseInt(customInput.value);
+    
+    if (!minutes || minutes < 1) {
+      customInput.focus();
+      return;
+    }
+    
+    // 清除预设按钮的激活状态
+    document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
+    countdownMinutes = minutes;
+    
+    // 可以给用户一个视觉反馈
+    const btn = document.getElementById('set-custom-btn');
+    const originalText = btn.textContent;
+    btn.textContent = '已设置';
+    setTimeout(() => {
+      btn.textContent = originalText;
+    }, 1000);
   });
   
   document.getElementById('close-reminder').addEventListener('click', () => {
