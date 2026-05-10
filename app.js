@@ -108,6 +108,7 @@ function getTotalTime(puzzle) {
   return puzzle.sessions.reduce((sum, session) => sum + (session.duration || 0), 0);
 }
 
+// 播放提示音（使用Web Audio API生成）
 function playSound() {
   return safeExecute(() => {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -127,6 +128,90 @@ function playSound() {
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + 0.5);
   }, 'playSound');
+}
+
+// 播放防沉迷结束提示音（更响亮、更醒目）
+function playAlarmSound() {
+  return safeExecute(() => {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // 创建第一个振荡器 - 高音提示
+    const oscillator1 = audioContext.createOscillator();
+    const gainNode1 = audioContext.createGain();
+    oscillator1.connect(gainNode1);
+    gainNode1.connect(audioContext.destination);
+    
+    oscillator1.frequency.setValueAtTime(1000, audioContext.currentTime);
+    oscillator1.frequency.setValueAtTime(1200, audioContext.currentTime + 0.2);
+    oscillator1.frequency.setValueAtTime(1000, audioContext.currentTime + 0.4);
+    
+    gainNode1.gain.setValueAtTime(0.4, audioContext.currentTime);
+    gainNode1.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6);
+    
+    oscillator1.start(audioContext.currentTime);
+    oscillator1.stop(audioContext.currentTime + 0.6);
+    
+    // 创建第二个振荡器 - 低音配合
+    const oscillator2 = audioContext.createOscillator();
+    const gainNode2 = audioContext.createGain();
+    oscillator2.connect(gainNode2);
+    gainNode2.connect(audioContext.destination);
+    
+    oscillator2.type = 'sine';
+    oscillator2.frequency.setValueAtTime(500, audioContext.currentTime);
+    oscillator2.frequency.setValueAtTime(600, audioContext.currentTime + 0.2);
+    oscillator2.frequency.setValueAtTime(500, audioContext.currentTime + 0.4);
+    
+    gainNode2.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gainNode2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6);
+    
+    oscillator2.start(audioContext.currentTime);
+    oscillator2.stop(audioContext.currentTime + 0.6);
+  }, 'playAlarmSound');
+}
+
+// 请求通知权限
+async function requestNotificationPermission() {
+  if ('Notification' in window) {
+    const permission = await Notification.requestPermission();
+    return permission === 'granted';
+  }
+  return false;
+}
+
+// 发送系统通知（模拟闹铃效果）
+function sendAlarmNotification() {
+  return safeExecute(async () => {
+    if (!('Notification' in window)) {
+      console.log('当前浏览器不支持通知功能');
+      return;
+    }
+    
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      console.log('用户未授权通知权限');
+      return;
+    }
+    
+    // 创建通知
+    const notification = new Notification('拼图计时器', {
+      body: '防沉迷时间已到！休息一下吧！',
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      sound: 'default',
+      vibrate: [200, 100, 200, 100, 200],
+      requireInteraction: true,
+      tag: 'puzzle-timer-alarm'
+    });
+    
+    // 点击通知时聚焦到应用
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+    };
+    
+    return notification;
+  }, 'sendAlarmNotification');
 }
 
 function savePuzzle(puzzle) {
@@ -420,6 +505,10 @@ function stopTimer() {
   
   stopCountdown();
   
+  // 重置后台计时状态
+  backgroundTimerStart = null;
+  backgroundTimerPaused = false;
+  
   if (currentSession) {
     currentSession.endTime = Date.now();
     currentSession.duration = currentSession.endTime - currentSession.startTime;
@@ -441,8 +530,87 @@ function stopTimer() {
   document.getElementById('countdown-time').classList.remove('warning', 'danger');
 }
 
+// ================================
+// 屏幕常亮和后台计时功能
+// ================================
+
+// 请求屏幕常亮权限
+async function requestScreenWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      const wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => {
+        console.log('屏幕常亮已释放');
+      });
+      return wakeLock;
+    } catch (err) {
+      console.log('无法获取屏幕常亮:', err.message);
+    }
+  } else {
+    console.log('当前浏览器不支持屏幕常亮API');
+  }
+  return null;
+}
+
+// 后台计时状态
+let backgroundTimerStart = null;
+let backgroundTimerPaused = false;
+
+// 处理应用进入后台
+function handleAppBackground() {
+  if (!currentSession || !timerInterval) return;
+  
+  // 记录进入后台的时间
+  backgroundTimerStart = Date.now();
+  backgroundTimerPaused = false;
+  
+  // 尝试请求屏幕常亮（虽然进入后台后通常会失效）
+  requestScreenWakeLock();
+  
+  console.log('应用进入后台，继续后台计时');
+}
+
+// 处理应用恢复前台
+function handleAppForeground() {
+  if (!currentSession || !backgroundTimerStart || backgroundTimerPaused) return;
+  
+  // 计算后台停留时间
+  const backgroundDuration = Date.now() - backgroundTimerStart;
+  
+  // 更新当前会话的持续时间
+  currentSession.duration += backgroundDuration;
+  
+  // 更新总时间显示
+  updateStats();
+  
+  // 更新当前时间显示
+  document.getElementById('current-time').textContent = formatTime(currentSession.duration);
+  
+  // 检查倒计时是否在后台期间结束
+  if (countdownInterval && countdownEndTime) {
+    const remaining = countdownEndTime - Date.now();
+    if (remaining <= 0) {
+      stopCountdown();
+      showReminder();
+    } else {
+      document.getElementById('countdown-time').textContent = formatTime(remaining);
+    }
+  }
+  
+  console.log(`应用恢复前台，后台计时 ${formatTime(backgroundDuration)}`);
+  
+  // 重置后台计时状态
+  backgroundTimerStart = null;
+}
+
 function showReminder() {
-  playSound();
+  // 播放防沉迷结束提示音（更响亮、更醒目）
+  playAlarmSound();
+  
+  // 发送系统通知（模拟闹铃效果）
+  sendAlarmNotification();
+  
+  // 显示弹窗提醒
   showModal('modal-reminder');
   
   const countdownEnabled = document.getElementById('countdown-enabled');
@@ -675,10 +843,27 @@ async function init() {
   });
   
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && timerInterval) {
-      stopTimer();
+    if (document.hidden) {
+      // 应用进入后台
+      handleAppBackground();
+    } else {
+      // 应用恢复前台
+      handleAppForeground();
     }
   });
+  
+  // 监听页面隐藏（用于iOS）
+  document.addEventListener('webkitvisibilitychange', () => {
+    if (document.webkitHidden) {
+      handleAppBackground();
+    } else {
+      handleAppForeground();
+    }
+  });
+  
+  // 监听应用被挂起
+  window.addEventListener('blur', handleAppBackground);
+  window.addEventListener('focus', handleAppForeground);
 }
 
 if (document.readyState === 'loading') {
