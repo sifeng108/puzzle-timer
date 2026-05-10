@@ -1,4 +1,4 @@
-const CACHE_NAME = 'puzzle-timer-cache-v1';
+const CACHE_NAME = 'puzzle-timer-cache-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -8,6 +8,9 @@ const ASSETS_TO_CACHE = [
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
+
+// 应用版本号
+const APP_VERSION = '2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -30,6 +33,19 @@ self.addEventListener('activate', (event) => {
       );
     }).then(() => self.clients.claim())
   );
+  
+  // 通知所有客户端有新版本
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'SW_ACTIVATED',
+            version: APP_VERSION
+          });
+        });
+      })
+  );
 });
 
 self.addEventListener('fetch', (event) => {
@@ -42,4 +58,16 @@ self.addEventListener('fetch', (event) => {
         return fetch(event.request);
       })
   );
+});
+
+// 处理来自客户端的消息
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'GET_VERSION') {
+    event.ports[0].postMessage({ version: APP_VERSION });
+  }
+  
+  // 跳过等待，立即激活新版本
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });

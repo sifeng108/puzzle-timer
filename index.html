@@ -135,17 +135,17 @@
       <!-- 倒计时设置 -->
       <div class="countdown-section">
         <label class="checkbox-label">
-          <input type="checkbox" id="countdown-enabled">
+          <input type="checkbox" id="countdown-enabled" checked>
           <span class="checkmark"></span>
           <span>启用防沉迷提醒</span>
         </label>
         
-        <div class="countdown-options" id="countdown-options">
+        <div class="countdown-options show" id="countdown-options">
           <div class="countdown-presets">
-            <button class="btn-preset active" data-minutes="15">15分钟</button>
+            <button class="btn-preset" data-minutes="15">15分钟</button>
             <button class="btn-preset" data-minutes="30">30分钟</button>
             <button class="btn-preset" data-minutes="45">45分钟</button>
-            <button class="btn-preset" data-minutes="60">60分钟</button>
+            <button class="btn-preset active" data-minutes="60">60分钟</button>
           </div>
           <div class="custom-countdown">
             <input 
@@ -201,16 +201,90 @@
   </div>
 
   <script>
+let swRegistration = null;
+
+// 更新提示UI
+function showUpdateNotification() {
+  const notification = document.getElementById('update-notification');
+  if (notification) {
+    notification.classList.add('show');
+  }
+}
+
+// 隐藏更新提示并刷新
+function hideUpdateNotification() {
+  const notification = document.getElementById('update-notification');
+  if (notification) {
+    notification.classList.remove('show');
+  }
+  // 通知Service Worker跳过等待，立即激活新版本
+  if (swRegistration && swRegistration.waiting) {
+    swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+  }
+  // 重新加载页面
+  setTimeout(() => {
+    window.location.reload();
+  }, 300);
+}
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js')
     .then(registration => {
       console.log('Service Worker registered:', registration);
+      swRegistration = registration;
+      
+      // 检查是否已经有等待中的更新
+      if (registration.waiting) {
+        showUpdateNotification();
+      }
+      
+      // 监听更新状态
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // 新的Service Worker已安装但尚未激活
+            showUpdateNotification();
+          }
+        });
+      });
+      
+      // 监听来自Service Worker的消息
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'SW_ACTIVATED') {
+          console.log('Service Worker activated:', event.data.version);
+        }
+      });
     })
     .catch(error => {
       console.log('Service Worker registration failed:', error);
     });
+  
+  // 监听Controller Change事件（用户从另一个标签页触发了更新）
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // Service Worker控制器发生变化，可能是有新版本
+    console.log('Service Worker controller changed');
+  });
 }
 </script>
 <script src="app.js"></script>
+
+<!-- PWA更新提示 -->
+<div id="update-notification" class="update-notification">
+  <div class="update-notification-content">
+    <div class="update-icon">🔄</div>
+    <div class="update-text">
+      <strong>发现新版本</strong>
+      <p>点击刷新以更新到最新版本</p>
+    </div>
+    <button id="btn-update" class="btn-update">刷新</button>
+  </div>
+</div>
+
+<script>
+document.getElementById('btn-update').addEventListener('click', hideUpdateNotification);
+</script>
+
 </body>
 </html>

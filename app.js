@@ -3,7 +3,7 @@
 // ================================
 const DB_NAME = 'PuzzleTimerDB';
 const DB_VERSION = 1;
-const DEFAULT_COUNTDOWN_MINUTES = 15;
+const DEFAULT_COUNTDOWN_MINUTES = 60;
 const TIMER_UPDATE_INTERVAL = 1000; // 1秒
 
 // ================================
@@ -625,6 +625,9 @@ async function init() {
   
   const puzzles = await getPuzzles();
   renderPuzzleList(puzzles);
+  
+  // 初始化倒计时显示（默认60分钟）
+  document.getElementById('countdown-time').textContent = formatTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
   
   // 刷新按钮
   document.getElementById('refresh-btn').addEventListener('click', async () => {
