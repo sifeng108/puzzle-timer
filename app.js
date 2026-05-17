@@ -133,41 +133,59 @@ function playSound() {
 // 播放防沉迷结束提示音（更响亮、更醒目）
 function playAlarmSound() {
   return safeExecute(() => {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    // 尝试使用下载的闹铃音频
+    const audio = new Audio('./sounds/alarm.mp3');
+    audio.volume = 1.0;
     
-    // 创建第一个振荡器 - 高音提示
-    const oscillator1 = audioContext.createOscillator();
-    const gainNode1 = audioContext.createGain();
-    oscillator1.connect(gainNode1);
-    gainNode1.connect(audioContext.destination);
-    
-    oscillator1.frequency.setValueAtTime(1000, audioContext.currentTime);
-    oscillator1.frequency.setValueAtTime(1200, audioContext.currentTime + 0.2);
-    oscillator1.frequency.setValueAtTime(1000, audioContext.currentTime + 0.4);
-    
-    gainNode1.gain.setValueAtTime(0.4, audioContext.currentTime);
-    gainNode1.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6);
-    
-    oscillator1.start(audioContext.currentTime);
-    oscillator1.stop(audioContext.currentTime + 0.6);
-    
-    // 创建第二个振荡器 - 低音配合
-    const oscillator2 = audioContext.createOscillator();
-    const gainNode2 = audioContext.createGain();
-    oscillator2.connect(gainNode2);
-    gainNode2.connect(audioContext.destination);
-    
-    oscillator2.type = 'sine';
-    oscillator2.frequency.setValueAtTime(500, audioContext.currentTime);
-    oscillator2.frequency.setValueAtTime(600, audioContext.currentTime + 0.2);
-    oscillator2.frequency.setValueAtTime(500, audioContext.currentTime + 0.4);
-    
-    gainNode2.gain.setValueAtTime(0.2, audioContext.currentTime);
-    gainNode2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6);
-    
-    oscillator2.start(audioContext.currentTime);
-    oscillator2.stop(audioContext.currentTime + 0.6);
+    audio.play().then(() => {
+      console.log('闹铃音频播放成功');
+    }).catch(() => {
+      // 如果音频播放失败，回退到Web Audio API生成的提示音
+      console.log('音频文件播放失败，使用Web Audio API回退');
+      playAlarmSoundFallback();
+    });
   }, 'playAlarmSound');
+}
+
+// Web Audio API回退方案
+function playAlarmSoundFallback() {
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  
+  // 创建第一个振荡器 - 高音提示
+  const oscillator1 = audioContext.createOscillator();
+  const gainNode1 = audioContext.createGain();
+  oscillator1.connect(gainNode1);
+  gainNode1.connect(audioContext.destination);
+  
+  oscillator1.frequency.setValueAtTime(1000, audioContext.currentTime);
+  oscillator1.frequency.setValueAtTime(1200, audioContext.currentTime + 0.2);
+  oscillator1.frequency.setValueAtTime(1000, audioContext.currentTime + 0.4);
+  
+  gainNode1.gain.setValueAtTime(0.5, audioContext.currentTime);
+  gainNode1.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.8);
+  
+  oscillator1.start(audioContext.currentTime);
+  oscillator1.stop(audioContext.currentTime + 0.8);
+  
+  // 创建第二个振荡器 - 低音配合
+  const oscillator2 = audioContext.createOscillator();
+  const gainNode2 = audioContext.createGain();
+  oscillator2.connect(gainNode2);
+  gainNode2.connect(audioContext.destination);
+  
+  oscillator2.type = 'sine';
+  oscillator2.frequency.setValueAtTime(500, audioContext.currentTime);
+  oscillator2.frequency.setValueAtTime(600, audioContext.currentTime + 0.2);
+  oscillator2.frequency.setValueAtTime(500, audioContext.currentTime + 0.4);
+  
+  gainNode2.gain.setValueAtTime(0.3, audioContext.currentTime);
+  gainNode2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.8);
+  
+  oscillator2.start(audioContext.currentTime);
+  oscillator2.stop(audioContext.currentTime + 0.8);
+  
+  // 循环播放3次
+  setTimeout(() => playAlarmSoundFallback(), 1000);
 }
 
 // 请求通知权限
@@ -463,6 +481,11 @@ function startTimer() {
 function startCountdown() {
   countdownEndTime = Date.now() + (countdownMinutes * 60 * 1000);
   
+  // 立即更新一次剩余时间显示，避免延迟
+  const countdownTimeEl = document.getElementById('countdown-time');
+  countdownTimeEl.textContent = formatTime(countdownMinutes * 60 * 1000);
+  countdownTimeEl.classList.remove('warning', 'danger');
+  
   countdownInterval = setInterval(() => {
     const remaining = countdownEndTime - Date.now();
     
@@ -526,8 +549,22 @@ function stopTimer() {
   document.getElementById('timer-btn').classList.remove('stop');
   document.getElementById('timer-btn').classList.add('start');
   
-  document.getElementById('countdown-time').textContent = '--:--:--';
-  document.getElementById('countdown-time').classList.remove('warning', 'danger');
+  // 如果防沉迷已启用，保持上次的设置不变
+  const countdownEnabled = document.getElementById('countdown-enabled');
+  if (countdownEnabled && countdownEnabled.checked) {
+    // 根据当前的 countdownMinutes 值更新预设按钮选中状态
+    document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
+    const presetBtn = document.querySelector(`.btn-preset[data-minutes="${countdownMinutes}"]`);
+    if (presetBtn) {
+      presetBtn.classList.add('active');
+    }
+    // 更新剩余时间显示（保持上次设置的时间）
+    document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
+    document.getElementById('countdown-time').classList.remove('warning', 'danger');
+  } else {
+    document.getElementById('countdown-time').textContent = '--:--:--';
+    document.getElementById('countdown-time').classList.remove('warning', 'danger');
+  }
 }
 
 // ================================
@@ -626,8 +663,22 @@ async function init() {
   const puzzles = await getPuzzles();
   renderPuzzleList(puzzles);
   
-  // 初始化倒计时显示（默认60分钟）
-  document.getElementById('countdown-time').textContent = formatTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
+  // 确保防沉迷默认选中（只有在元素存在时）
+  const countdownEnabled = document.getElementById('countdown-enabled');
+  const countdownOptions = document.getElementById('countdown-options');
+  const countdownTime = document.getElementById('countdown-time');
+  
+  if (countdownEnabled) {
+    countdownEnabled.checked = true;
+  }
+  if (countdownOptions) {
+    countdownOptions.classList.add('show');
+  }
+  // 初始化倒计时显示（默认60分钟）- 只有在元素存在时设置
+  if (countdownTime) {
+    countdownTime.textContent = formatTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
+    countdownTime.classList.remove('warning', 'danger');
+  }
   
   // 刷新按钮
   document.getElementById('refresh-btn').addEventListener('click', async () => {
@@ -734,6 +785,15 @@ async function init() {
       
       updateStats();
       renderSessions();
+      
+      // 切换拼图时自动选中防沉迷并重置倒计时
+      const countdownEnabled = document.getElementById('countdown-enabled');
+      countdownEnabled.checked = true;
+      document.getElementById('countdown-options').classList.add('show');
+      stopCountdown();
+      document.getElementById('countdown-time').textContent = formatTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
+      document.getElementById('countdown-time').classList.remove('warning', 'danger');
+      
       showPage('page-detail');
     }
   });
@@ -816,6 +876,16 @@ async function init() {
       document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       countdownMinutes = parseInt(btn.dataset.minutes);
+      
+      // 更新剩余时间显示
+      document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
+      document.getElementById('countdown-time').classList.remove('warning', 'danger');
+      
+      // 如果计时器正在运行且防沉迷已启用，重新设置倒计时
+      if (timerInterval && document.getElementById('countdown-enabled').checked) {
+        stopCountdown();
+        startCountdown();
+      }
     });
   });
   
@@ -831,6 +901,16 @@ async function init() {
     // 清除预设按钮的激活状态
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
     countdownMinutes = minutes;
+    
+    // 更新剩余时间显示
+    document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
+    document.getElementById('countdown-time').classList.remove('warning', 'danger');
+    
+    // 如果计时器正在运行且防沉迷已启用，重新设置倒计时
+    if (timerInterval && document.getElementById('countdown-enabled').checked) {
+      stopCountdown();
+      startCountdown();
+    }
     
     // 可以给用户一个视觉反馈
     const btn = document.getElementById('set-custom-btn');
