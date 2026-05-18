@@ -893,11 +893,15 @@ async function init() {
     }
   });
   
-  document.getElementById('back-btn').addEventListener('click', () => {
+  document.getElementById('back-btn').addEventListener('click', async () => {
     if (timerInterval) {
       stopTimer();
     }
     currentPuzzle = null;
+    
+    const puzzles = await getPuzzles();
+    renderPuzzleList(puzzles);
+    
     showPage('page-home');
   });
   
