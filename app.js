@@ -437,8 +437,8 @@ function renderSessions() {
     timeDiv.className = 'session-time';
     let timeText = formatTime(session.duration);
     if (session.type === 'adjustment') {
-      const sign = session.adjustMinutes > 0 ? '+' : '';
-      timeText = `${sign}${session.adjustMinutes}分钟`;
+      const sign = session.adjustMinutes > 0 ? '+' : '-';
+      timeText = sign + formatTime(Math.abs(session.duration));
       timeDiv.classList.add('session-time-adjusted');
       timeDiv.textContent = timeText + ' ✏️';
     } else {
@@ -1247,8 +1247,8 @@ async function init() {
       let timeDisplay = formatTime(session.duration);
       let timeClass = 'stats-puzzle-time';
       if (session.type === 'adjustment') {
-        const sign = session.adjustMinutes > 0 ? '+' : '';
-        timeDisplay = `${sign}${session.adjustMinutes}分钟`;
+        const sign = session.adjustMinutes > 0 ? '+' : '-';
+        timeDisplay = sign + formatTime(Math.abs(session.duration));
         timeClass = 'stats-puzzle-time stats-puzzle-time-adjusted';
       }
       let metaInfo = `${session.puzzleBrand || ''}${session.puzzleBrand && session.puzzlePieces ? ' · ' : ''}${session.puzzlePieces ? session.puzzlePieces + '片' : ''}${session.date ? ' · ' + formatDate(session.date) : ''}`;
