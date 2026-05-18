@@ -435,13 +435,31 @@ function renderSessions() {
     
     const timeDiv = document.createElement('div');
     timeDiv.className = 'session-time';
-    timeDiv.textContent = formatTime(session.duration);
+    let timeText = formatTime(session.duration);
+    if (session.type === 'adjustment') {
+      const sign = session.adjustMinutes > 0 ? '+' : '';
+      timeText = `${sign}${session.adjustMinutes}分钟`;
+      timeDiv.classList.add('session-time-adjusted');
+      timeDiv.textContent = timeText + ' ✏️';
+    } else {
+      timeDiv.textContent = timeText;
+    }
+    
+    const centerDiv = document.createElement('div');
+    centerDiv.className = 'session-center';
+    if (session.type === 'adjustment' && session.note) {
+      const noteSpan = document.createElement('span');
+      noteSpan.className = 'session-reason';
+      noteSpan.textContent = session.note;
+      centerDiv.appendChild(noteSpan);
+    }
     
     const dateDiv = document.createElement('div');
     dateDiv.className = 'session-date';
-    dateDiv.textContent = formatDate(session.startTime);
+    dateDiv.textContent = formatDate(session.date || session.startTime);
     
     sessionItem.appendChild(timeDiv);
+    sessionItem.appendChild(centerDiv);
     sessionItem.appendChild(dateDiv);
     
     sessionList.appendChild(sessionItem);
@@ -680,14 +698,66 @@ async function init() {
     countdownTime.classList.remove('warning', 'danger');
   }
   
-  // 刷新按钮
-  document.getElementById('refresh-btn').addEventListener('click', async () => {
-    try {
-      const puzzles = await getPuzzles();
-      renderPuzzleList(puzzles);
-    } catch (e) {
-      console.error('Refresh error:', e);
+  // 统计按钮
+  document.getElementById('stats-btn').addEventListener('click', async () => {
+    await renderStatsPage();
+    showPage('page-stats');
+  });
+  
+  // 统计页面返回按钮
+  document.getElementById('stats-back-btn').addEventListener('click', () => {
+    showPage('page-home');
+  });
+  
+  // 取消编辑单条记录
+  document.getElementById('cancel-edit-session').addEventListener('click', () => {
+    hideModal('modal-edit-session');
+  });
+  
+  // 确认编辑单条记录
+  document.getElementById('confirm-edit-session').addEventListener('click', async () => {
+    const input = document.getElementById('edit-session-time-input');
+    const timeStr = input.value.trim();
+    const milliseconds = parseTime(timeStr);
+    
+    if (milliseconds === null) {
+      alert('请输入有效的时间格式（如：01:30:00）');
+      return;
     }
+    
+    if (window.editSessionData) {
+      const { puzzleId, sessionIndex } = window.editSessionData;
+      const puzzles = await getPuzzles();
+      const puzzle = puzzles.find(p => p.id === puzzleId);
+      if (puzzle && puzzle.sessions && puzzle.sessions[sessionIndex]) {
+        puzzle.sessions[sessionIndex].duration = milliseconds;
+        await savePuzzle(puzzle);
+      }
+    }
+    
+    hideModal('modal-edit-session');
+    await renderStatsPage();
+  });
+  
+  // 取消删除记录
+  document.getElementById('cancel-delete-session').addEventListener('click', () => {
+    hideModal('modal-delete-session');
+  });
+  
+  // 确认删除记录
+  document.getElementById('confirm-delete-session').addEventListener('click', async () => {
+    if (window.deleteSessionData) {
+      const { puzzleId, sessionIndex } = window.deleteSessionData;
+      const puzzles = await getPuzzles();
+      const puzzle = puzzles.find(p => p.id === puzzleId);
+      if (puzzle && puzzle.sessions) {
+        puzzle.sessions.splice(sessionIndex, 1);
+        await savePuzzle(puzzle);
+      }
+    }
+    
+    hideModal('modal-delete-session');
+    await renderStatsPage();
   });
   
   document.getElementById('add-puzzle-btn').addEventListener('click', async () => {
@@ -851,6 +921,61 @@ async function init() {
     }
   });
   
+  // 编辑拼图时长
+  window.showEditPuzzleTimeModal = function() {
+    if (!currentPuzzle) return;
+    showModal('modal-edit-puzzle-time');
+    document.getElementById('edit-puzzle-time-input').value = '';
+    document.getElementById('edit-puzzle-note-input').value = '';
+  };
+  
+  document.getElementById('cancel-edit-puzzle-time').addEventListener('click', () => {
+    hideModal('modal-edit-puzzle-time');
+  });
+  
+  document.getElementById('confirm-edit-puzzle-time').addEventListener('click', async () => {
+    const timeInput = document.getElementById('edit-puzzle-time-input');
+    const noteInput = document.getElementById('edit-puzzle-note-input');
+    const minutes = parseInt(timeInput.value);
+    const note = noteInput.value.trim();
+    
+    if (isNaN(minutes) || minutes === 0) {
+      alert('请输入有效的分钟数（正数增加，负数减少）');
+      return;
+    }
+    
+    const diffMs = minutes * 60 * 1000;
+    
+    if (!currentPuzzle) {
+      hideModal('modal-edit-puzzle-time');
+      return;
+    }
+    
+    if (!currentPuzzle.sessions) {
+      currentPuzzle.sessions = [];
+    }
+    
+    const adjustmentSession = {
+      duration: diffMs,
+      adjusted: true,
+      adjustMinutes: minutes,
+      note: note || '',
+      date: new Date().toISOString(),
+      type: 'adjustment'
+    };
+    
+    currentPuzzle.sessions.push(adjustmentSession);
+    await savePuzzle(currentPuzzle);
+    
+    currentPuzzle = await getPuzzleById(currentPuzzle.id);
+    updateStats();
+    renderSessions();
+    
+    timeInput.value = '';
+    noteInput.value = '';
+    hideModal('modal-edit-puzzle-time');
+  });
+  
   document.getElementById('timer-btn').addEventListener('click', () => {
     if (timerInterval) {
       stopTimer();
@@ -947,6 +1072,235 @@ async function init() {
   // 监听应用被挂起
   window.addEventListener('blur', handleAppBackground);
   window.addEventListener('focus', handleAppForeground);
+  
+  // 统计页面相关函数
+  async function calculateTotalTime() {
+    const puzzles = await getPuzzles();
+    let total = 0;
+    puzzles.forEach(puzzle => {
+      if (puzzle.sessions) {
+        puzzle.sessions.forEach(session => {
+          total += session.duration || 0;
+        });
+      }
+    });
+    return total;
+  }
+  
+  async function calculateTotalPieces() {
+    const puzzles = await getPuzzles();
+    let total = 0;
+    puzzles.forEach(puzzle => {
+      total += parseInt(puzzle.pieces) || 0;
+    });
+    return total;
+  }
+  
+  async function getBrandDistribution() {
+    const puzzles = await getPuzzles();
+    const distribution = {};
+    puzzles.forEach(puzzle => {
+      const brand = puzzle.brand || '未分类';
+      if (!distribution[brand]) {
+        distribution[brand] = { count: 0, pieces: 0, time: 0 };
+      }
+      distribution[brand].count++;
+      distribution[brand].pieces += parseInt(puzzle.pieces) || 0;
+      if (puzzle.sessions) {
+        puzzle.sessions.forEach(session => {
+          distribution[brand].time += session.duration || 0;
+        });
+      }
+    });
+    return distribution;
+  }
+  
+  async function getPiecesDistribution() {
+    const puzzles = await getPuzzles();
+    const distribution = {};
+    puzzles.forEach(puzzle => {
+      const pieces = parseInt(puzzle.pieces) || 0;
+      let range = '其他';
+      if (pieces > 0 && pieces <= 500) range = '500片以下';
+      else if (pieces <= 1000) range = '501-1000片';
+      else if (pieces <= 2000) range = '1001-2000片';
+      else if (pieces > 2000) range = '2000片以上';
+      
+      if (!distribution[range]) {
+        distribution[range] = { count: 0, pieces: 0, time: 0 };
+      }
+      distribution[range].count++;
+      distribution[range].pieces += pieces;
+      if (puzzle.sessions) {
+        puzzle.sessions.forEach(session => {
+          distribution[range].time += session.duration || 0;
+        });
+      }
+    });
+    return distribution;
+  }
+  
+  function parseTime(timeStr) {
+    const parts = timeStr.split(':');
+    if (parts.length === 3) {
+      const hours = parseInt(parts[0]);
+      const minutes = parseInt(parts[1]);
+      const seconds = parseInt(parts[2]);
+      if (!isNaN(hours) && !isNaN(minutes) && !isNaN(seconds)) {
+        return (hours * 3600 + minutes * 60 + seconds) * 1000;
+      }
+    }
+    return null;
+  }
+  
+  async function renderStatsPage() {
+    const puzzles = await getPuzzles();
+    
+    // 计算统计数据
+    const totalTime = await calculateTotalTime();
+    const totalPieces = await calculateTotalPieces();
+    const totalPuzzles = puzzles.length;
+    const avgTimePerPiece = totalPieces > 0 ? (totalTime / totalPieces / 1000).toFixed(2) : '0.00';
+    
+    // 更新总体统计
+    document.getElementById('stats-total-puzzles').textContent = totalPuzzles;
+    document.getElementById('stats-total-pieces').textContent = totalPieces;
+    document.getElementById('stats-total-time').textContent = formatTime(totalTime);
+    document.getElementById('stats-avg-time-per-piece').textContent = avgTimePerPiece;
+    
+    // 更新品牌分布
+    const brandDistribution = await getBrandDistribution();
+    renderDistribution('brand-distribution', brandDistribution);
+    
+    // 更新片数分布
+    const piecesDistribution = await getPiecesDistribution();
+    renderDistribution('pieces-distribution', piecesDistribution);
+    
+    // 更新拼图列表
+    renderStatsPuzzleList(puzzles);
+  }
+  
+  function renderDistribution(containerId, distribution) {
+    const container = document.getElementById(containerId);
+    const entries = Object.entries(distribution);
+    
+    if (entries.length === 0) {
+      container.innerHTML = '<div class="empty-state">暂无数据</div>';
+      return;
+    }
+    
+    // 计算最大值用于百分比计算
+    const maxCount = Math.max(...entries.map(([, data]) => data.count));
+    
+    container.innerHTML = entries.map(([name, data]) => {
+      const percentage = maxCount > 0 ? (data.count / maxCount * 100) : 0;
+      return `
+        <div class="distribution-item">
+          <div style="flex: 1;">
+            <div class="distribution-label">${escapeHtml(name)}</div>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+              ${data.count}幅 · ${data.pieces}片 · ${formatTime(data.time)}
+            </div>
+            <div class="distribution-bar-container">
+              <div class="distribution-bar" style="width: ${percentage}%"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+  
+  function renderStatsPuzzleList(puzzles) {
+    const container = document.getElementById('stats-puzzle-list');
+    
+    if (puzzles.length === 0) {
+      container.innerHTML = '<div class="empty-state">暂无拼图</div>';
+      return;
+    }
+    
+    // 创建包含所有会话的列表
+    const allSessions = [];
+    puzzles.forEach(puzzle => {
+      if (puzzle.sessions && puzzle.sessions.length > 0) {
+        puzzle.sessions.forEach((session, index) => {
+          allSessions.push({
+            puzzleId: puzzle.id,
+            puzzleName: puzzle.name,
+            puzzleBrand: puzzle.brand,
+            puzzlePieces: puzzle.pieces,
+            sessionIndex: index,
+            duration: session.duration || 0,
+            date: session.date || '',
+            adjusted: session.adjusted || false,
+            adjustMinutes: session.adjustMinutes || 0,
+            note: session.note || '',
+            type: session.type || 'timer'
+          });
+        });
+      }
+    });
+    
+    // 按日期排序（最新的在前）
+    allSessions.sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    container.innerHTML = allSessions.map(session => {
+      let timeDisplay = formatTime(session.duration);
+      let timeClass = 'stats-puzzle-time';
+      if (session.type === 'adjustment') {
+        const sign = session.adjustMinutes > 0 ? '+' : '';
+        timeDisplay = `${sign}${session.adjustMinutes}分钟`;
+        timeClass = 'stats-puzzle-time stats-puzzle-time-adjusted';
+      }
+      let metaInfo = `${session.puzzleBrand || ''}${session.puzzleBrand && session.puzzlePieces ? ' · ' : ''}${session.puzzlePieces ? session.puzzlePieces + '片' : ''}${session.date ? ' · ' + formatDate(session.date) : ''}`;
+      if (session.type === 'adjustment' && session.note) {
+        metaInfo += ` · ${session.note}`;
+      }
+      return `
+        <div class="stats-puzzle-item">
+          <div class="stats-puzzle-info">
+            <div class="stats-puzzle-name">${escapeHtml(session.puzzleName)}${session.type === 'adjustment' ? ' ✏️' : ''}</div>
+            <div class="stats-puzzle-meta">${metaInfo}</div>
+          </div>
+          <div class="${timeClass}">${timeDisplay}</div>
+          <div class="stats-puzzle-actions">
+            <button class="stats-puzzle-action-btn" onclick="editSession('${session.puzzleId}', ${session.sessionIndex}, '${escapeHtml(session.puzzleName)}')" title="编辑">✏️</button>
+            <button class="stats-puzzle-action-btn delete" onclick="deleteSession('${session.puzzleId}', ${session.sessionIndex})" title="删除">🗑️</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+  
+  function formatDate(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const hour = date.getHours().toString().padStart(2, '0');
+    const minute = date.getMinutes().toString().padStart(2, '0');
+    return `${month}月${day}日 ${hour}:${minute}`;
+  }
+  
+  window.editSession = function(puzzleId, sessionIndex, puzzleName) {
+    window.editSessionData = { puzzleId, sessionIndex };
+    document.getElementById('edit-session-puzzle-name').textContent = puzzleName;
+    
+    // 获取当前会话时长
+    const puzzles = JSON.parse(localStorage.getItem('puzzles') || '[]');
+    const puzzle = puzzles.find(p => p.id === puzzleId);
+    let currentDuration = 0;
+    if (puzzle && puzzle.sessions && puzzle.sessions[sessionIndex]) {
+      currentDuration = puzzle.sessions[sessionIndex].duration || 0;
+    }
+    
+    document.getElementById('edit-session-time-input').value = formatTime(currentDuration);
+    showModal('modal-edit-session');
+  };
+  
+  window.deleteSession = function(puzzleId, sessionIndex) {
+    window.deleteSessionData = { puzzleId, sessionIndex };
+    showModal('modal-delete-session');
+  };
 }
 
 if (document.readyState === 'loading') {

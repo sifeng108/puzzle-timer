@@ -57,6 +57,11 @@ html, body {
   color: var(--text-primary);
 }
 
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .btn-back {
   width: 44px;
   height: 44px;
@@ -90,6 +95,44 @@ html, body {
 
 .btn-delete:hover {
   background-color: rgba(255, 71, 87, 0.1);
+}
+
+.btn-stats {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-stats:hover {
+  background-color: var(--border-color);
+}
+
+.btn-edit {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-edit:hover {
+  background-color: var(--border-color);
 }
 
 .btn-refresh {
@@ -340,6 +383,18 @@ html, body {
   margin-top: 4px;
 }
 
+.stat-item-clickable {
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-radius: 8px;
+  margin: -4px;
+  padding: 4px 8px;
+}
+
+.stat-item-clickable:hover {
+  background-color: var(--bg-card-hover);
+}
+
 .stat-divider {
   width: 1px;
   height: 40px;
@@ -552,23 +607,45 @@ html, body {
 .session-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  background-color: var(--bg-card);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.session-item:last-child {
+  border-bottom: none;
 }
 
 .session-time {
+  min-width: 90px;
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
+.session-time-adjusted {
+  color: var(--accent-color);
+  font-size: 14px;
+}
+
+.session-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+
+.session-reason {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 .session-date {
+  min-width: 90px;
   font-size: 12px;
   color: var(--text-secondary);
+  text-align: right;
 }
 
 .modal {
@@ -613,6 +690,37 @@ html, body {
   font-size: 14px;
   color: var(--text-secondary);
   margin-bottom: 24px;
+  text-align: center;
+}
+
+.time-adjust-input-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.time-adjust-input-group .input-text {
+  flex: 1;
+  text-align: center;
+  font-size: 18px;
+}
+
+.time-adjust-unit {
+  font-size: 16px;
+  color: var(--text-secondary);
+  min-width: 40px;
+}
+
+.time-adjust-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+#edit-puzzle-note-input {
+  margin-bottom: 12px;
   text-align: center;
 }
 
@@ -795,6 +903,228 @@ html, body {
   
   .btn-update {
     padding: 8px 16px;
+    font-size: 13px;
+  }
+}
+
+/* 统计页面样式 */
+.stats-overview {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stats-card {
+  background-color: var(--bg-card);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.stat-icon {
+  font-size: 28px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-card-hover);
+  border-radius: 12px;
+}
+
+.stat-info {
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.section {
+  margin-bottom: 20px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.distribution-list {
+  background-color: var(--bg-card);
+  border-radius: 12px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.distribution-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+}
+
+.distribution-item:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.distribution-label {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.distribution-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent-color);
+}
+
+.distribution-bar-container {
+  width: 100%;
+  height: 6px;
+  background-color: var(--bg-card-hover);
+  border-radius: 3px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.distribution-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-color), var(--primary-color));
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.stats-puzzle-list {
+  background-color: var(--bg-card);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.stats-puzzle-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+  transition: background-color 0.2s;
+}
+
+.stats-puzzle-item:last-child {
+  border-bottom: none;
+}
+
+.stats-puzzle-item:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.stats-puzzle-info {
+  flex: 1;
+}
+
+.stats-puzzle-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.stats-puzzle-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.stats-puzzle-time {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-color);
+  margin-right: 12px;
+}
+
+.stats-puzzle-time-adjusted {
+  font-size: 12px;
+  color: var(--primary-color);
+}
+
+.stats-puzzle-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.stats-puzzle-action-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.stats-puzzle-action-btn:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.stats-puzzle-action-btn.delete:hover {
+  color: var(--danger-color);
+}
+
+/* 统计页面移动端适配 */
+@media (max-width: 480px) {
+  .stats-overview {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  
+  .stats-card {
+    padding: 12px;
+    gap: 10px;
+  }
+  
+  .stat-icon {
+    font-size: 24px;
+    width: 40px;
+    height: 40px;
+  }
+  
+  .stat-value {
+    font-size: 18px;
+  }
+  
+  .stat-label {
+    font-size: 11px;
+  }
+  
+  .stats-puzzle-item {
+    padding: 12px 14px;
+  }
+  
+  .stats-puzzle-name {
+    font-size: 14px;
+  }
+  
+  .stats-puzzle-time {
     font-size: 13px;
   }
 }
