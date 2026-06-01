@@ -136,6 +136,7 @@ function playSound() {
 // 播放防沉迷结束提示音
 let globalAudioContext = null;
 let alarmAudio = null;
+let audioInitialized = false;
 
 // 初始化音频上下文（在用户交互时）
 function initAudioContext() {
@@ -144,58 +145,59 @@ function initAudioContext() {
       globalAudioContext = new (window.AudioContext || window.webkitAudioContext)();
     } catch (e) {
       console.error('无法创建音频上下文:', e);
+      return;
     }
   }
-  if (globalAudioContext && globalAudioContext.state === 'suspended') {
-    globalAudioContext.resume();
+  
+  if (globalAudioContext.state === 'suspended') {
+    globalAudioContext.resume().then(() => {
+      audioInitialized = true;
+      console.log('音频上下文已恢复');
+    }).catch(err => {
+      console.error('音频上下文恢复失败:', err);
+    });
+  } else if (globalAudioContext.state === 'running') {
+    audioInitialized = true;
   }
 }
 
 function playAlarmSound() {
   console.log('正在播放闹铃...');
   
-  // 震动反馈
+  // 震动反馈（最可靠的方式）
   if (navigator.vibrate) {
     navigator.vibrate([500, 200, 500, 200, 500, 200, 500]);
+    console.log('震动已触发');
   }
   
-  // 先尝试 Web Audio API
+  // iOS 需要用户交互后才能播放音频
+  // 尝试 Web Audio API
   playAlarmWithWebAudio();
   
-  // 同时尝试加载音频文件
-  try {
-    if (alarmAudio) {
-      alarmAudio.pause();
-      alarmAudio.currentTime = 0;
-    }
-    alarmAudio = new Audio('./sounds/alarm.mp3');
-    alarmAudio.volume = 1.0;
-    const playPromise = alarmAudio.play();
-    if (playPromise) {
-      playPromise.then(() => {
-        console.log('MP3闹铃播放成功');
-        alarmAudio.loop = true;
-      }).catch(err => {
-        console.log('MP3闹铃播放失败:', err);
-      });
-    }
-  } catch (e) {
-    console.log('MP3加载失败:', e);
-  }
+  // 尝试 HTML Audio
+  playAlarmWithHTMLAudio();
 }
 
-// 使用 Web Audio API 播放闹铃
 function playAlarmWithWebAudio() {
   try {
-    initAudioContext();
+    if (!globalAudioContext) {
+      initAudioContext();
+    }
     
     if (!globalAudioContext) {
       console.error('无法创建音频上下文');
       return;
     }
     
+    // 确保音频上下文正在运行
+    if (globalAudioContext.state === 'suspended') {
+      console.log('音频上下文暂停中，尝试恢复...');
+      globalAudioContext.resume();
+    }
+    
     const now = globalAudioContext.currentTime;
     
+    // 创建多个蜂鸣声
     for (let i = 0; i < 5; i++) {
       const osc = globalAudioContext.createOscillator();
       const gain = globalAudioContext.createGain();
@@ -204,23 +206,54 @@ function playAlarmWithWebAudio() {
       osc.connect(gain);
       gain.connect(globalAudioContext.destination);
       
-      const beepStart = now + (i * 0.5);
-      const beepEnd = beepStart + 0.3;
+      const beepStart = now + (i * 0.4);
+      const beepEnd = beepStart + 0.25;
       
-      osc.frequency.setValueAtTime(880, beepStart);
-      osc.frequency.setValueAtTime(660, beepStart + 0.15);
+      // 使用更响亮的频率
+      osc.frequency.setValueAtTime(1000, beepStart);
+      osc.frequency.setValueAtTime(800, beepStart + 0.125);
       
-      gain.gain.setValueAtTime(0.6, beepStart);
-      gain.gain.setValueAtTime(0.6, beepStart + 0.25);
+      // 渐变音量
+      gain.gain.setValueAtTime(0, beepStart);
+      gain.gain.linearRampToValueAtTime(0.8, beepStart + 0.01);
+      gain.gain.setValueAtTime(0.8, beepStart + 0.2);
       gain.gain.exponentialRampToValueAtTime(0.001, beepEnd);
       
       osc.start(beepStart);
       osc.stop(beepEnd);
     }
     
-    console.log('Web Audio API 闹铃已启动');
+    console.log('Web Audio API 蜂鸣已启动');
   } catch (error) {
-    console.error('Web Audio API 闹铃播放失败:', error);
+    console.error('Web Audio API 蜂鸣失败:', error);
+  }
+}
+
+function playAlarmWithHTMLAudio() {
+  try {
+    if (alarmAudio) {
+      alarmAudio.pause();
+      alarmAudio = null;
+    }
+    
+    alarmAudio = new Audio('./sounds/alarm.mp3');
+    alarmAudio.volume = 1.0;
+    
+    const playPromise = alarmAudio.play();
+    if (playPromise !== undefined) {
+      playPromise.then(() => {
+        console.log('MP3音频播放成功');
+        alarmAudio.loop = true;
+      }).catch(err => {
+        console.log('MP3播放被阻止:', err.message);
+        // MP3 被阻止时，确保 Web Audio 正在运行
+        if (globalAudioContext && globalAudioContext.state === 'suspended') {
+          globalAudioContext.resume();
+        }
+      });
+    }
+  } catch (e) {
+    console.log('MP3加载失败:', e);
   }
 }
 
@@ -768,6 +801,28 @@ async function checkServerVersion() {
   }
 }
 
+// 预加载音频（在用户首次交互时调用）
+function preloadAudio() {
+  try {
+    // 预加载 MP3
+    alarmAudio = new Audio('./sounds/alarm.mp3');
+    alarmAudio.volume = 0.01; // 极低音量，只为绕过 iOS 的自动播放限制
+    alarmAudio.play().then(() => {
+      alarmAudio.pause();
+      alarmAudio.currentTime = 0;
+      alarmAudio.volume = 1.0;
+      console.log('音频已预加载');
+    }).catch(() => {
+      // 预加载失败没关系，继续尝试
+    });
+    
+    // 初始化音频上下文
+    initAudioContext();
+  } catch (e) {
+    console.log('音频预加载失败:', e);
+  }
+}
+
 // 版本号比较函数
 function compareVersions(v1, v2) {
   const parts1 = v1.split('.').map(Number);
@@ -808,6 +863,10 @@ async function init() {
   
   // 检查服务器版本并更新显示
   checkServerVersion();
+  
+  // 首次用户交互时预加载音频
+  document.addEventListener('click', preloadAudio, { once: true });
+  document.addEventListener('touchstart', preloadAudio, { once: true });
   
   // 确保防沉迷默认选中（只有在元素存在时）
   const countdownEnabled = document.getElementById('countdown-enabled');

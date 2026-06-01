@@ -30,6 +30,7 @@
     <header class="header">
       <h1 class="title">拼图计时器</h1>
       <div class="header-actions">
+        <button id="check-update-btn" class="btn-icon" title="检查更新">🔄</button>
         <button id="stats-btn" class="btn-stats" title="统计">📊</button>
       </div>
     </header>
@@ -426,6 +427,31 @@ if ('serviceWorker' in navigator) {
     console.log('Service Worker controller changed');
   });
 }
+
+// 手动检查更新
+document.getElementById('check-update-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('check-update-btn');
+  btn.disabled = true;
+  
+  try {
+    // 先检查服务器版本
+    if (typeof checkServerVersion === 'function') {
+      await checkServerVersion();
+    }
+    
+    // 再触发 Service Worker 更新
+    if (swRegistration) {
+      await swRegistration.update();
+      if (swRegistration.waiting) {
+        showUpdateNotification();
+      }
+    }
+  } catch (error) {
+    console.error('检查更新失败:', error);
+  }
+  
+  btn.disabled = false;
+});
 
 // 点击更新提示直接刷新
 document.getElementById('update-notification').addEventListener('click', (e) => {
