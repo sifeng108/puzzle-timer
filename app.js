@@ -17,6 +17,8 @@ let countdownInterval = null;
 let currentSession = null;
 let countdownEndTime = null;
 let countdownMinutes = DEFAULT_COUNTDOWN_MINUTES;
+let timerStartTime = null;
+let countdownTotalDuration = null;
 
 // ================================
 // 工具函数
@@ -133,41 +135,53 @@ function playSound() {
 
 // 播放防沉迷结束提示音
 let globalAudioContext = null;
+let alarmAudio = null;
 
 // 初始化音频上下文（在用户交互时）
 function initAudioContext() {
   if (!globalAudioContext) {
-    globalAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+      globalAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      console.error('无法创建音频上下文:', e);
+    }
   }
-  if (globalAudioContext.state === 'suspended') {
+  if (globalAudioContext && globalAudioContext.state === 'suspended') {
     globalAudioContext.resume();
   }
 }
 
 function playAlarmSound() {
-  return safeExecute(() => {
-    console.log('正在播放闹铃...');
-    
-    // 先尝试 Web Audio API（更可靠）
-    playAlarmWithWebAudio();
-    
-    // 同时尝试加载音频文件（如果有的话）
-    try {
-      const audio = new Audio('./sounds/alarm.mp3');
-      audio.volume = 1.0;
-      const playPromise = audio.play();
-      if (playPromise) {
-        playPromise.then(() => {
-          console.log('MP3闹铃播放成功');
-          audio.loop = true;
-        }).catch(err => {
-          console.log('MP3闹铃播放失败:', err);
-        });
-      }
-    } catch (e) {
-      console.log('MP3加载失败:', e);
+  console.log('正在播放闹铃...');
+  
+  // 震动反馈
+  if (navigator.vibrate) {
+    navigator.vibrate([500, 200, 500, 200, 500, 200, 500]);
+  }
+  
+  // 先尝试 Web Audio API
+  playAlarmWithWebAudio();
+  
+  // 同时尝试加载音频文件
+  try {
+    if (alarmAudio) {
+      alarmAudio.pause();
+      alarmAudio.currentTime = 0;
     }
-  }, 'playAlarmSound');
+    alarmAudio = new Audio('./sounds/alarm.mp3');
+    alarmAudio.volume = 1.0;
+    const playPromise = alarmAudio.play();
+    if (playPromise) {
+      playPromise.then(() => {
+        console.log('MP3闹铃播放成功');
+        alarmAudio.loop = true;
+      }).catch(err => {
+        console.log('MP3闹铃播放失败:', err);
+      });
+    }
+  } catch (e) {
+    console.log('MP3加载失败:', e);
+  }
 }
 
 // 使用 Web Audio API 播放闹铃
@@ -182,27 +196,26 @@ function playAlarmWithWebAudio() {
     
     const now = globalAudioContext.currentTime;
     
-    // 创建三次明显的蜂鸣声
     for (let i = 0; i < 5; i++) {
       const osc = globalAudioContext.createOscillator();
       const gain = globalAudioContext.createGain();
       
-      osc.type = 'square'; // 方波更响亮
+      osc.type = 'square';
       osc.connect(gain);
       gain.connect(globalAudioContext.destination);
       
-      const startTime = now + (i * 0.4);
-      const endTime = startTime + 0.2;
+      const beepStart = now + (i * 0.5);
+      const beepEnd = beepStart + 0.3;
       
-      // 880Hz 和 440Hz 交替
-      osc.frequency.setValueAtTime(880, startTime);
-      osc.frequency.setValueAtTime(440, startTime + 0.1);
+      osc.frequency.setValueAtTime(880, beepStart);
+      osc.frequency.setValueAtTime(660, beepStart + 0.15);
       
-      gain.gain.setValueAtTime(0.5, startTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, endTime);
+      gain.gain.setValueAtTime(0.6, beepStart);
+      gain.gain.setValueAtTime(0.6, beepStart + 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.001, beepEnd);
       
-      osc.start(startTime);
-      osc.stop(endTime);
+      osc.start(beepStart);
+      osc.stop(beepEnd);
     }
     
     console.log('Web Audio API 闹铃已启动');
@@ -490,12 +503,13 @@ function renderSessions() {
 }
 
 function startTimer() {
-  // 用户交互时初始化音频上下文，避开自动播放限制
   initAudioContext();
+  
+  timerStartTime = Date.now();
   
   currentSession = {
     id: generateId(),
-    startTime: Date.now(),
+    startTime: timerStartTime,
     endTime: null,
     duration: 0
   };
@@ -505,12 +519,14 @@ function startTimer() {
   }
   currentPuzzle.sessions.push(currentSession);
   
-  const startTime = Date.now();
-  
   timerInterval = setInterval(() => {
-    const elapsed = Date.now() - startTime;
+    const elapsed = Date.now() - timerStartTime;
     currentSession.duration = elapsed;
     document.getElementById('current-time').textContent = formatTime(elapsed);
+    
+    if (countdownTotalDuration !== null) {
+      updateCountdownDisplay(countdownTotalDuration - elapsed);
+    }
   }, TIMER_UPDATE_INTERVAL);
   
   document.getElementById('timer-btn').textContent = '结束计时';
@@ -523,44 +539,33 @@ function startTimer() {
 }
 
 function startCountdown() {
-  countdownEndTime = Date.now() + (countdownMinutes * 60 * 1000);
+  countdownTotalDuration = countdownMinutes * 60 * 1000;
+  countdownEndTime = timerStartTime + countdownTotalDuration;
   
-  // 立即更新一次剩余时间显示，避免延迟
   const countdownTimeEl = document.getElementById('countdown-time');
-  const totalDuration = countdownMinutes * 60 * 1000;
-  countdownTimeEl.textContent = formatTime(totalDuration);
+  countdownTimeEl.textContent = formatTime(countdownTotalDuration);
   countdownTimeEl.classList.remove('warning', 'danger');
+}
+
+function updateCountdownDisplay(remaining) {
+  if (remaining <= 0) {
+    stopCountdown();
+    showReminder();
+    return;
+  }
   
-  let firstRun = true;
+  const countdownTimeEl = document.getElementById('countdown-time');
+  countdownTimeEl.textContent = formatTime(remaining);
   
-  countdownInterval = setInterval(() => {
-    if (firstRun) {
-      // 第一次执行时先不更新，等待完整的1秒
-      firstRun = false;
-      return;
-    }
-    
-    const remaining = countdownEndTime - Date.now();
-    
-    if (remaining <= 0) {
-      stopCountdown();
-      showReminder();
-      return;
-    }
-    
-    const countdownTimeEl = document.getElementById('countdown-time');
-    countdownTimeEl.textContent = formatTime(remaining);
-    
-    if (remaining < 60000) {
-      countdownTimeEl.classList.remove('warning');
-      countdownTimeEl.classList.add('danger');
-    } else if (remaining < 300000) {
-      countdownTimeEl.classList.remove('danger');
-      countdownTimeEl.classList.add('warning');
-    } else {
-      countdownTimeEl.classList.remove('warning', 'danger');
-    }
-  }, TIMER_UPDATE_INTERVAL);
+  if (remaining < 60000) {
+    countdownTimeEl.classList.remove('warning');
+    countdownTimeEl.classList.add('danger');
+  } else if (remaining < 300000) {
+    countdownTimeEl.classList.remove('danger');
+    countdownTimeEl.classList.add('warning');
+  } else {
+    countdownTimeEl.classList.remove('warning', 'danger');
+  }
 }
 
 function stopCountdown() {
@@ -569,6 +574,7 @@ function stopCountdown() {
     countdownInterval = null;
   }
   countdownEndTime = null;
+  countdownTotalDuration = null;
 }
 
 function stopTimer() {
@@ -578,6 +584,7 @@ function stopTimer() {
   }
   
   stopCountdown();
+  timerStartTime = null;
   
   // 重置后台计时状态
   backgroundTimerStart = null;
@@ -675,8 +682,9 @@ function handleAppForeground() {
   document.getElementById('current-time').textContent = formatTime(currentSession.duration);
   
   // 检查倒计时是否在后台期间结束
-  if (countdownInterval && countdownEndTime) {
-    const remaining = countdownEndTime - Date.now();
+  if (countdownTotalDuration !== null && timerStartTime !== null) {
+    const elapsed = Date.now() - timerStartTime;
+    const remaining = countdownTotalDuration - elapsed;
     if (remaining <= 0) {
       stopCountdown();
       showReminder();
