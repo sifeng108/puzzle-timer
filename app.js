@@ -5,7 +5,7 @@ const DB_NAME = 'PuzzleTimerDB';
 const DB_VERSION = 1;
 const DEFAULT_COUNTDOWN_MINUTES = 60;
 const TIMER_UPDATE_INTERVAL = 1000; // 1秒
-const APP_VERSION = '1.1.0'; // 与 sw.js 保持一致
+const APP_VERSION = '1.1.1'; // 与 sw.js 保持一致
 
 // ================================
 // 全局状态变量
