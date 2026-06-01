@@ -131,19 +131,28 @@ function playSound() {
 }
 
 // 播放防沉迷结束提示音（更响亮、更醒目）
+let alarmAudio = null;
+
 function playAlarmSound() {
   return safeExecute(() => {
-    // 尝试使用下载的闹铃音频
-    const audio = new Audio('./sounds/alarm.mp3');
-    audio.volume = 1.0;
+    if (alarmAudio) {
+      alarmAudio.pause();
+      alarmAudio.currentTime = 0;
+    }
     
-    audio.play().then(() => {
-      console.log('闹铃音频播放成功');
-    }).catch(() => {
-      // 如果音频播放失败，回退到Web Audio API生成的提示音
-      console.log('音频文件播放失败，使用Web Audio API回退');
-      playAlarmSoundFallback();
-    });
+    alarmAudio = new Audio('./sounds/alarm.mp3');
+    alarmAudio.volume = 1.0;
+    alarmAudio.loop = true;
+    
+    const playPromise = alarmAudio.play();
+    if (playPromise !== undefined) {
+      playPromise.then(() => {
+        console.log('闹铃音频播放成功');
+      }).catch(error => {
+        console.log('音频文件播放失败，使用Web Audio API回退:', error);
+        playAlarmSoundFallback();
+      });
+    }
   }, 'playAlarmSound');
 }
 
