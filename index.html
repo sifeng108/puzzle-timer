@@ -30,6 +30,7 @@
     <header class="header">
       <h1 class="title">拼图计时器</h1>
       <div class="header-actions">
+        <button id="check-update-btn" class="btn-icon" title="检查更新">🔄</button>
         <button id="stats-btn" class="btn-stats" title="统计">📊</button>
       </div>
     </header>
@@ -365,6 +366,23 @@ if ('serviceWorker' in navigator) {
         showUpdateNotification();
       }
       
+      // 启动时自动检查更新（带超时机制）
+      const updatePromise = registration.update();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Update check timeout')), 2000)
+      );
+      
+      Promise.race([updatePromise, timeoutPromise])
+        .then(() => {
+          console.log('Update check completed');
+          if (registration.waiting) {
+            showUpdateNotification();
+          }
+        })
+        .catch(error => {
+          console.log('Update check skipped:', error.message);
+        });
+      
       // 监听更新状态
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
@@ -394,18 +412,37 @@ if ('serviceWorker' in navigator) {
     console.log('Service Worker controller changed');
   });
 }
+
+// 手动检查更新
+document.getElementById('check-update-btn').addEventListener('click', async () => {
+  if (!swRegistration) {
+    alert('Service Worker 未注册，无法检查更新');
+    return;
+  }
+  
+  try {
+    await swRegistration.update();
+    
+    // 检查是否有等待中的新版本
+    if (swRegistration.waiting) {
+      showUpdateNotification();
+    } else {
+      alert('当前已是最新版本');
+    }
+  } catch (error) {
+    console.error('检查更新失败:', error);
+    alert('检查更新失败，请稍后再试');
+  }
+});
 </script>
 <script src="app.js"></script>
 
 <!-- PWA更新提示 -->
 <div id="update-notification" class="update-notification">
   <div class="update-notification-content">
-    <div class="update-icon">🔄</div>
-    <div class="update-text">
-      <strong>发现新版本</strong>
-      <p>点击刷新以更新到最新版本</p>
-    </div>
-    <button id="btn-update" class="btn-update">刷新</button>
+    <span class="update-icon">🔄</span>
+    <span class="update-text">有新版本</span>
+    <button id="btn-update" class="btn-update">更新</button>
   </div>
 </div>
 
