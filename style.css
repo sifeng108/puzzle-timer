@@ -180,6 +180,33 @@ html, body {
   overflow-y: auto;
 }
 
+.version-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  margin-top: auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.version-divider {
+  opacity: 0.5;
+}
+
+.version-status {
+  color: var(--primary-color);
+}
+
+.version-status.latest {
+  color: var(--success-color);
+}
+
+.version-status.outdated {
+  color: var(--danger-color);
+}
+
 .add-section {
   display: flex;
   flex-direction: column;

@@ -84,6 +84,13 @@
           </div>
         </div>
       </div>
+      
+      <!-- 版本信息 -->
+      <div class="version-footer" id="version-footer">
+        <span class="version-text">当前版本 <span id="current-version">-</span></span>
+        <span class="version-divider">·</span>
+        <span class="version-status" id="version-status">检查更新中...</span>
+      </div>
     </div>
   </div>
 
@@ -330,6 +337,7 @@
 
   <script>
 let swRegistration = null;
+window.swRegistration = null;
 
 // 更新提示UI
 function showUpdateNotification() {
@@ -360,6 +368,7 @@ if ('serviceWorker' in navigator) {
     .then(registration => {
       console.log('Service Worker registered:', registration);
       swRegistration = registration;
+      window.swRegistration = registration;
       
       // 检查是否已经有等待中的更新
       if (registration.waiting) {
@@ -378,9 +387,15 @@ if ('serviceWorker' in navigator) {
           if (registration.waiting) {
             showUpdateNotification();
           }
+          if (typeof updateVersionDisplay === 'function') {
+            updateVersionDisplay();
+          }
         })
         .catch(error => {
           console.log('Update check skipped:', error.message);
+          if (typeof updateVersionDisplay === 'function') {
+            updateVersionDisplay();
+          }
         });
       
       // 监听更新状态
@@ -432,6 +447,13 @@ document.getElementById('check-update-btn').addEventListener('click', async () =
   } catch (error) {
     console.error('检查更新失败:', error);
     alert('检查更新失败，请稍后再试');
+  }
+});
+
+// 点击更新提示直接刷新
+document.getElementById('update-notification').addEventListener('click', (e) => {
+  if (e.target.id !== 'btn-update') {
+    hideUpdateNotification();
   }
 });
 </script>

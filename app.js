@@ -5,6 +5,7 @@ const DB_NAME = 'PuzzleTimerDB';
 const DB_VERSION = 1;
 const DEFAULT_COUNTDOWN_MINUTES = 60;
 const TIMER_UPDATE_INTERVAL = 1000; // 1秒
+const APP_VERSION = '4'; // 与 sw.js 保持一致
 
 // ================================
 // 全局状态变量
@@ -132,6 +133,7 @@ function playSound() {
 
 // 播放防沉迷结束提示音（更响亮、更醒目）
 let alarmAudio = null;
+let alarmAudioContext = null;
 
 function playAlarmSound() {
   return safeExecute(() => {
@@ -142,12 +144,12 @@ function playAlarmSound() {
     
     alarmAudio = new Audio('./sounds/alarm.mp3');
     alarmAudio.volume = 1.0;
-    alarmAudio.loop = true;
     
     const playPromise = alarmAudio.play();
     if (playPromise !== undefined) {
       playPromise.then(() => {
         console.log('闹铃音频播放成功');
+        alarmAudio.loop = true;
       }).catch(error => {
         console.log('音频文件播放失败，使用Web Audio API回退:', error);
         playAlarmSoundFallback();
@@ -158,43 +160,41 @@ function playAlarmSound() {
 
 // Web Audio API回退方案
 function playAlarmSoundFallback() {
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  
-  // 创建第一个振荡器 - 高音提示
-  const oscillator1 = audioContext.createOscillator();
-  const gainNode1 = audioContext.createGain();
-  oscillator1.connect(gainNode1);
-  gainNode1.connect(audioContext.destination);
-  
-  oscillator1.frequency.setValueAtTime(1000, audioContext.currentTime);
-  oscillator1.frequency.setValueAtTime(1200, audioContext.currentTime + 0.2);
-  oscillator1.frequency.setValueAtTime(1000, audioContext.currentTime + 0.4);
-  
-  gainNode1.gain.setValueAtTime(0.5, audioContext.currentTime);
-  gainNode1.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.8);
-  
-  oscillator1.start(audioContext.currentTime);
-  oscillator1.stop(audioContext.currentTime + 0.8);
-  
-  // 创建第二个振荡器 - 低音配合
-  const oscillator2 = audioContext.createOscillator();
-  const gainNode2 = audioContext.createGain();
-  oscillator2.connect(gainNode2);
-  gainNode2.connect(audioContext.destination);
-  
-  oscillator2.type = 'sine';
-  oscillator2.frequency.setValueAtTime(500, audioContext.currentTime);
-  oscillator2.frequency.setValueAtTime(600, audioContext.currentTime + 0.2);
-  oscillator2.frequency.setValueAtTime(500, audioContext.currentTime + 0.4);
-  
-  gainNode2.gain.setValueAtTime(0.3, audioContext.currentTime);
-  gainNode2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.8);
-  
-  oscillator2.start(audioContext.currentTime);
-  oscillator2.stop(audioContext.currentTime + 0.8);
-  
-  // 循环播放3次
-  setTimeout(() => playAlarmSoundFallback(), 1000);
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    if (audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+    
+    // 创建第一组蜂鸣 - 高音
+    const playBeep = (startTime, freq1, freq2, duration) => {
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      
+      osc.frequency.setValueAtTime(freq1, startTime);
+      osc.frequency.setValueAtTime(freq2, startTime + duration * 0.3);
+      osc.frequency.setValueAtTime(freq1, startTime + duration * 0.6);
+      
+      gain.gain.setValueAtTime(0.4, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+      
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    };
+    
+    // 播放3次蜂鸣
+    const now = audioContext.currentTime;
+    playBeep(now, 1000, 1200, 0.3);
+    playBeep(now + 0.4, 1000, 1200, 0.3);
+    playBeep(now + 0.8, 1000, 1200, 0.3);
+    
+    console.log('Web Audio API 闹铃播放成功');
+  } catch (error) {
+    console.error('Web Audio API 闹铃播放失败:', error);
+  }
 }
 
 // 请求通知权限
@@ -667,6 +667,23 @@ function handleAppForeground() {
   backgroundTimerStart = null;
 }
 
+function updateVersionDisplay() {
+  const currentVersionEl = document.getElementById('current-version');
+  const versionStatusEl = document.getElementById('version-status');
+  
+  if (currentVersionEl) {
+    currentVersionEl.textContent = 'v' + APP_VERSION;
+  }
+  
+  if (swRegistration && swRegistration.waiting) {
+    versionStatusEl.textContent = '有新版本可用';
+    versionStatusEl.className = 'version-status outdated';
+  } else {
+    versionStatusEl.textContent = '已是最新版本';
+    versionStatusEl.className = 'version-status latest';
+  }
+}
+
 function showReminder() {
   // 播放防沉迷结束提示音（更响亮、更醒目）
   playAlarmSound();
@@ -689,6 +706,9 @@ async function init() {
   
   const puzzles = await getPuzzles();
   renderPuzzleList(puzzles);
+  
+  // 更新版本信息
+  updateVersionDisplay();
   
   // 确保防沉迷默认选中（只有在元素存在时）
   const countdownEnabled = document.getElementById('countdown-enabled');

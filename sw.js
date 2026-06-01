@@ -1,4 +1,4 @@
-const CACHE_NAME = 'puzzle-timer-cache-v4';
+const CACHE_NAME = 'puzzle-timer-cache-v1.1.0';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -11,7 +11,7 @@ const ASSETS_TO_CACHE = [
 ];
 
 // 应用版本号
-const APP_VERSION = '4';
+const APP_VERSION = '1.1.0';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
