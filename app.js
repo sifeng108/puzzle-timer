@@ -716,6 +716,73 @@ function updateVersionDisplay() {
   }
 }
 
+// 从服务器获取最新版本号
+async function fetchLatestVersion() {
+  try {
+    const response = await fetch('./version.json', {
+      cache: 'no-cache',
+      timeout: 3000
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      return data.version;
+    }
+  } catch (error) {
+    console.log('无法获取服务器版本:', error.message);
+  }
+  return null;
+}
+
+// 检查服务器版本并更新显示
+async function checkServerVersion() {
+  const latestVersion = await fetchLatestVersion();
+  const versionStatusEl = document.getElementById('version-status');
+  
+  if (!latestVersion) {
+    // 如果无法获取服务器版本，使用原有逻辑
+    updateVersionDisplay();
+    return;
+  }
+  
+  const currentVersionEl = document.getElementById('current-version');
+  if (currentVersionEl) {
+    currentVersionEl.textContent = 'v' + APP_VERSION;
+  }
+  
+  // 比较版本号
+  if (compareVersions(latestVersion, APP_VERSION) > 0) {
+    versionStatusEl.textContent = `最新版本 v${latestVersion}`;
+    versionStatusEl.className = 'version-status outdated';
+    // 触发 Service Worker 更新检查
+    if (swRegistration) {
+      swRegistration.update().then(() => {
+        if (swRegistration.waiting) {
+          showUpdateNotification();
+        }
+      });
+    }
+  } else {
+    versionStatusEl.textContent = '已是最新版本';
+    versionStatusEl.className = 'version-status latest';
+  }
+}
+
+// 版本号比较函数
+function compareVersions(v1, v2) {
+  const parts1 = v1.split('.').map(Number);
+  const parts2 = v2.split('.').map(Number);
+  const length = Math.max(parts1.length, parts2.length);
+  
+  for (let i = 0; i < length; i++) {
+    const p1 = parts1[i] || 0;
+    const p2 = parts2[i] || 0;
+    if (p1 > p2) return 1;
+    if (p1 < p2) return -1;
+  }
+  return 0;
+}
+
 function showReminder() {
   // 播放防沉迷结束提示音（更响亮、更醒目）
   playAlarmSound();
@@ -739,8 +806,8 @@ async function init() {
   const puzzles = await getPuzzles();
   renderPuzzleList(puzzles);
   
-  // 更新版本信息
-  updateVersionDisplay();
+  // 检查服务器版本并更新显示
+  checkServerVersion();
   
   // 确保防沉迷默认选中（只有在元素存在时）
   const countdownEnabled = document.getElementById('countdown-enabled');

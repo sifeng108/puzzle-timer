@@ -30,7 +30,6 @@
     <header class="header">
       <h1 class="title">拼图计时器</h1>
       <div class="header-actions">
-        <button id="check-update-btn" class="btn-icon" title="检查更新">🔄</button>
         <button id="stats-btn" class="btn-stats" title="统计">📊</button>
       </div>
     </header>
@@ -427,28 +426,6 @@ if ('serviceWorker' in navigator) {
     console.log('Service Worker controller changed');
   });
 }
-
-// 手动检查更新
-document.getElementById('check-update-btn').addEventListener('click', async () => {
-  if (!swRegistration) {
-    alert('Service Worker 未注册，无法检查更新');
-    return;
-  }
-  
-  try {
-    await swRegistration.update();
-    
-    // 检查是否有等待中的新版本
-    if (swRegistration.waiting) {
-      showUpdateNotification();
-    } else {
-      alert('当前已是最新版本');
-    }
-  } catch (error) {
-    console.error('检查更新失败:', error);
-    alert('检查更新失败，请稍后再试');
-  }
-});
 
 // 点击更新提示直接刷新
 document.getElementById('update-notification').addEventListener('click', (e) => {
