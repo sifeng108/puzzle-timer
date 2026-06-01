@@ -1059,8 +1059,23 @@ async function init() {
     }, 1000);
   });
   
-  document.getElementById('close-reminder').addEventListener('click', () => {
+  document.getElementById('reminder-rest').addEventListener('click', () => {
     hideModal('modal-reminder');
+    if (alarmAudio) {
+      alarmAudio.pause();
+      alarmAudio.currentTime = 0;
+    }
+    if (timerInterval) {
+      stopTimer();
+    }
+  });
+  
+  document.getElementById('reminder-continue').addEventListener('click', () => {
+    hideModal('modal-reminder');
+    if (alarmAudio) {
+      alarmAudio.pause();
+      alarmAudio.currentTime = 0;
+    }
   });
   
   document.addEventListener('visibilitychange', () => {
