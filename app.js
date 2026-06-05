@@ -137,6 +137,8 @@ function playSound() {
 let globalAudioContext = null;
 let alarmAudio = null;
 let audioInitialized = false;
+let activeOscillators = []; // 保存活动的 oscillators 以便停止
+let alarmTimeout = null; // 用于自动停止声音的定时器
 
 // 初始化音频上下文（在用户交互时）
 function initAudioContext() {
@@ -163,19 +165,47 @@ function initAudioContext() {
 
 function playAlarmSound() {
   console.log('正在播放闹铃...');
-  
-  // 震动反馈（最可靠的方式）
-  if (navigator.vibrate) {
-    navigator.vibrate([500, 200, 500, 200, 500, 200, 500]);
-    console.log('震动已触发');
+
+  // 清除之前的自动停止定时器
+  if (alarmTimeout) {
+    clearTimeout(alarmTimeout);
+    alarmTimeout = null;
   }
-  
+
+  // 使用 haptic 库进行震动反馈（优先）
+  if (window.haptic) {
+    try {
+      // 触发多次震动反馈
+      window.haptic.impact('heavy');
+      setTimeout(() => window.haptic.impact('heavy'), 300);
+      setTimeout(() => window.haptic.impact('heavy'), 600);
+      setTimeout(() => window.haptic.notify('warning'), 900);
+      console.log('Haptic 震动已触发');
+    } catch (e) {
+      console.log('Haptic 震动失败，使用原生震动:', e);
+      // 回退到原生震动
+      if (navigator.vibrate) {
+        navigator.vibrate([500, 200, 500, 200, 500, 200, 500]);
+      }
+    }
+  } else if (navigator.vibrate) {
+    // 回退到原生震动
+    navigator.vibrate([500, 200, 500, 200, 500, 200, 500]);
+    console.log('原生震动已触发');
+  }
+
   // iOS 需要用户交互后才能播放音频
   // 尝试 Web Audio API
   playAlarmWithWebAudio();
-  
+
   // 尝试 HTML Audio
   playAlarmWithHTMLAudio();
+
+  // 5秒后自动停止声音
+  alarmTimeout = setTimeout(() => {
+    stopAlarmSound();
+    console.log('闹铃已自动停止（5秒超时）');
+  }, 3000);
 }
 
 function playAlarmWithWebAudio() {
@@ -196,6 +226,9 @@ function playAlarmWithWebAudio() {
     }
     
     const now = globalAudioContext.currentTime;
+    
+    // 清空之前的 oscillators
+    stopAlarmSound();
     
     // 创建多个蜂鸣声
     for (let i = 0; i < 5; i++) {
@@ -219,8 +252,19 @@ function playAlarmWithWebAudio() {
       gain.gain.setValueAtTime(0.8, beepStart + 0.2);
       gain.gain.exponentialRampToValueAtTime(0.001, beepEnd);
       
+      // 保存 oscillator 引用以便停止
+      activeOscillators.push({ osc, gain });
+      
       osc.start(beepStart);
       osc.stop(beepEnd);
+      
+      // 播放完毕后从数组中移除
+      setTimeout(() => {
+        const index = activeOscillators.findIndex(item => item.osc === osc);
+        if (index !== -1) {
+          activeOscillators.splice(index, 1);
+        }
+      }, (i + 1) * 400);
     }
     
     console.log('Web Audio API 蜂鸣已启动');
@@ -229,21 +273,51 @@ function playAlarmWithWebAudio() {
   }
 }
 
+// 停止所有声音
+function stopAlarmSound() {
+  console.log('正在停止声音...');
+  
+  // 清除自动停止定时器
+  if (alarmTimeout) {
+    clearTimeout(alarmTimeout);
+    alarmTimeout = null;
+  }
+  
+  // 停止 HTML Audio
+  if (alarmAudio) {
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+    alarmAudio = null;
+  }
+  
+  // 停止 Web Audio API oscillators
+  activeOscillators.forEach(item => {
+    try {
+      item.gain.gain.exponentialRampToValueAtTime(0.001, globalAudioContext.currentTime + 0.1);
+      item.osc.stop(globalAudioContext.currentTime + 0.1);
+    } catch (e) {
+      // 忽略错误
+    }
+  });
+  activeOscillators = [];
+}
+
 function playAlarmWithHTMLAudio() {
   try {
     if (alarmAudio) {
       alarmAudio.pause();
+      alarmAudio.currentTime = 0;
       alarmAudio = null;
     }
     
     alarmAudio = new Audio('./sounds/alarm.mp3');
     alarmAudio.volume = 1.0;
+    alarmAudio.loop = false; // 不循环播放
     
     const playPromise = alarmAudio.play();
     if (playPromise !== undefined) {
       playPromise.then(() => {
         console.log('MP3音频播放成功');
-        alarmAudio.loop = true;
       }).catch(err => {
         console.log('MP3播放被阻止:', err.message);
         // MP3 被阻止时，确保 Web Audio 正在运行
@@ -1239,10 +1313,7 @@ async function init() {
   
   document.getElementById('reminder-rest').addEventListener('click', () => {
     hideModal('modal-reminder');
-    if (alarmAudio) {
-      alarmAudio.pause();
-      alarmAudio.currentTime = 0;
-    }
+    stopAlarmSound(); // 停止所有声音
     if (timerInterval) {
       stopTimer();
     }
@@ -1250,10 +1321,7 @@ async function init() {
   
   document.getElementById('reminder-continue').addEventListener('click', () => {
     hideModal('modal-reminder');
-    if (alarmAudio) {
-      alarmAudio.pause();
-      alarmAudio.currentTime = 0;
-    }
+    stopAlarmSound(); // 停止所有声音
   });
   
   document.addEventListener('visibilitychange', () => {

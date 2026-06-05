@@ -8,13 +8,13 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
-    script-src 'self' 'unsafe-inline';
+    script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net;
     style-src 'self' 'unsafe-inline';
     img-src 'self' data:;
     font-src 'self';
-    connect-src 'none';
+    connect-src 'self';
     object-src 'none';
-    media-src 'none';
+    media-src 'self';
     frame-src 'none';
     child-src 'none';
     worker-src 'self';
@@ -473,6 +473,13 @@ document.getElementById('update-notification').addEventListener('click', (e) => 
 
 <script>
 document.getElementById('btn-update').addEventListener('click', hideUpdateNotification);
+</script>
+
+<!-- 引入 haptic 反馈库 -->
+<script type="module">
+  import { haptic } from 'https://unpkg.com/@mxerf/tappt/dist/index.mjs';
+  window.haptic = haptic;
+  console.log('Haptic 库已加载');
 </script>
 
 </body>
