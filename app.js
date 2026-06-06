@@ -5,7 +5,7 @@ const DB_NAME = 'PuzzleTimerDB';
 const DB_VERSION = 1;
 const DEFAULT_COUNTDOWN_MINUTES = 60;
 const TIMER_UPDATE_INTERVAL = 1000; // 1秒
-const APP_VERSION = '1.1.2'; // 与 sw.js 保持一致
+const APP_VERSION = '1.1.3'; // 与 sw.js 保持一致
 
 // ================================
 // 全局状态变量
@@ -163,7 +163,7 @@ function initAudioContext() {
   }
 }
 
-function playAlarmSound() {
+async function playAlarmSound() {
   console.log('正在播放闹铃...');
 
   // 清除之前的自动停止定时器
@@ -195,11 +195,24 @@ function playAlarmSound() {
   }
 
   // iOS 需要用户交互后才能播放音频
+  // 确保音频上下文已初始化并恢复
+  if (!globalAudioContext) {
+    initAudioContext();
+  }
+  if (globalAudioContext && globalAudioContext.state === 'suspended') {
+    try {
+      await globalAudioContext.resume();
+      console.log('音频上下文已恢复');
+    } catch (e) {
+      console.error('音频上下文恢复失败:', e);
+    }
+  }
+
   // 尝试 Web Audio API
-  playAlarmWithWebAudio();
+  await playAlarmWithWebAudio();
 
   // 尝试 HTML Audio
-  playAlarmWithHTMLAudio();
+  await playAlarmWithHTMLAudio();
 
   // 5秒后自动停止声音
   alarmTimeout = setTimeout(() => {
@@ -208,7 +221,7 @@ function playAlarmSound() {
   }, 3000);
 }
 
-function playAlarmWithWebAudio() {
+async function playAlarmWithWebAudio() {
   try {
     if (!globalAudioContext) {
       initAudioContext();
@@ -222,7 +235,12 @@ function playAlarmWithWebAudio() {
     // 确保音频上下文正在运行
     if (globalAudioContext.state === 'suspended') {
       console.log('音频上下文暂停中，尝试恢复...');
-      globalAudioContext.resume();
+      try {
+        await globalAudioContext.resume();
+        console.log('音频上下文恢复成功');
+      } catch (err) {
+        console.error('音频上下文恢复失败:', err);
+      }
     }
     
     const now = globalAudioContext.currentTime;
@@ -302,7 +320,7 @@ function stopAlarmSound() {
   activeOscillators = [];
 }
 
-function playAlarmWithHTMLAudio() {
+async function playAlarmWithHTMLAudio() {
   try {
     if (alarmAudio) {
       alarmAudio.pause();
@@ -316,14 +334,11 @@ function playAlarmWithHTMLAudio() {
     
     const playPromise = alarmAudio.play();
     if (playPromise !== undefined) {
-      playPromise.then(() => {
+      await playPromise.then(() => {
         console.log('MP3音频播放成功');
       }).catch(err => {
         console.log('MP3播放被阻止:', err.message);
         // MP3 被阻止时，确保 Web Audio 正在运行
-        if (globalAudioContext && globalAudioContext.state === 'suspended') {
-          globalAudioContext.resume();
-        }
       });
     }
   } catch (e) {
@@ -878,17 +893,11 @@ async function checkServerVersion() {
 // 预加载音频（在用户首次交互时调用）
 function preloadAudio() {
   try {
-    // 预加载 MP3
+    // 预加载 MP3（不播放，只加载）
     alarmAudio = new Audio('./sounds/alarm.mp3');
-    alarmAudio.volume = 0.01; // 极低音量，只为绕过 iOS 的自动播放限制
-    alarmAudio.play().then(() => {
-      alarmAudio.pause();
-      alarmAudio.currentTime = 0;
-      alarmAudio.volume = 1.0;
-      console.log('音频已预加载');
-    }).catch(() => {
-      // 预加载失败没关系，继续尝试
-    });
+    alarmAudio.volume = 1.0;
+    alarmAudio.load();
+    console.log('音频已预加载');
     
     // 初始化音频上下文
     initAudioContext();
@@ -912,9 +921,9 @@ function compareVersions(v1, v2) {
   return 0;
 }
 
-function showReminder() {
+async function showReminder() {
   // 播放防沉迷结束提示音（更响亮、更醒目）
-  playAlarmSound();
+  await playAlarmSound();
   
   // 发送系统通知（模拟闹铃效果）
   sendAlarmNotification();
