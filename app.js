@@ -19,6 +19,10 @@ let countdownEndTime = null;
 let countdownMinutes = DEFAULT_COUNTDOWN_MINUTES;
 let timerStartTime = null;
 let countdownTotalDuration = null;
+let countdownAlarmTimeout = null;
+let reminderTriggered = false;
+let silentUnlockAudio = null;
+let wakeLock = null;
 
 // ================================
 // 工具函数
@@ -97,6 +101,17 @@ function formatTime(ms) {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
+// 倒计时显示：初始 59 算第 1 秒，显示 0 时刚好走完第 60 秒
+// 实际结束时间仍是完整的 countdownMinutes，总时长不变
+function formatCountdownTime(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000) - 1);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
 function formatDate(timestamp) {
   const date = new Date(timestamp);
   const month = date.getMonth() + 1;
@@ -160,6 +175,30 @@ function initAudioContext() {
     });
   } else if (globalAudioContext.state === 'running') {
     audioInitialized = true;
+  }
+}
+
+// 在用户手势时解锁移动端音频播放（iOS Safari 必需）
+async function unlockAudioPlayback() {
+  initAudioContext();
+  if (globalAudioContext?.state === 'suspended') {
+    try {
+      await globalAudioContext.resume();
+      audioInitialized = true;
+    } catch (e) {
+      console.error('音频解锁失败:', e);
+    }
+  }
+  if (!silentUnlockAudio) {
+    silentUnlockAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+    silentUnlockAudio.volume = 0.01;
+  }
+  try {
+    await silentUnlockAudio.play();
+    silentUnlockAudio.pause();
+    silentUnlockAudio.currentTime = 0;
+  } catch (e) {
+    console.log('静音解锁播放被阻止:', e.message);
   }
 }
 
@@ -245,8 +284,12 @@ async function playAlarmWithWebAudio() {
     
     const now = globalAudioContext.currentTime;
     
-    // 清空之前的 oscillators
-    stopAlarmSound();
+    activeOscillators.forEach(item => {
+      try {
+        item.osc.stop();
+      } catch (e) { /* ignore */ }
+    });
+    activeOscillators = [];
     
     // 创建多个蜂鸣声
     for (let i = 0; i < 5; i++) {
@@ -330,19 +373,23 @@ async function playAlarmWithHTMLAudio() {
     
     alarmAudio = new Audio('./sounds/alarm.mp3');
     alarmAudio.volume = 1.0;
-    alarmAudio.loop = false; // 不循环播放
+    alarmAudio.loop = false;
     
     const playPromise = alarmAudio.play();
     if (playPromise !== undefined) {
       await playPromise.then(() => {
         console.log('MP3音频播放成功');
-      }).catch(err => {
-        console.log('MP3播放被阻止:', err.message);
-        // MP3 被阻止时，确保 Web Audio 正在运行
+      }).catch(async () => {
+        // MP3 不存在或被阻止时，用内嵌蜂鸣音回退
+        alarmAudio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIGWi77+efTRAMUKfj8LZjHAY4kdfyzHksBSR3x/DdkEAKFF606euoVRQKRp/g8r5sIQUrgc7y2Yk2CBlou+/nn00QDFCn4/C2YxwGOJHX8sx5LAUkd8fw3ZBAC');
+        alarmAudio.volume = 1.0;
+        await alarmAudio.play().catch(err => {
+          console.log('内嵌音频播放被阻止:', err.message);
+        });
       });
     }
   } catch (e) {
-    console.log('MP3加载失败:', e);
+    console.log('HTML Audio 播放失败:', e);
   }
 }
 
@@ -363,7 +410,10 @@ function sendAlarmNotification() {
       return;
     }
     
-    const permission = await Notification.requestPermission();
+    let permission = Notification.permission;
+    if (permission === 'default') {
+      permission = await Notification.requestPermission();
+    }
     if (permission !== 'granted') {
       console.log('用户未授权通知权限');
       return;
@@ -624,60 +674,98 @@ function renderSessions() {
   });
 }
 
-function startTimer() {
-  initAudioContext();
+function getCountdownRemaining() {
+  if (countdownEndTime === null) return null;
+  return countdownEndTime - Date.now();
+}
+
+function tickTimers() {
+  if (!timerStartTime || !currentSession) return;
   
+  const elapsed = Date.now() - timerStartTime;
+  currentSession.duration = elapsed;
+  document.getElementById('current-time').textContent = formatTime(elapsed);
+  
+  if (countdownEndTime !== null) {
+    updateCountdownDisplay(getCountdownRemaining());
+  }
+}
+
+function scheduleCountdownAlarm() {
+  if (countdownAlarmTimeout) {
+    clearTimeout(countdownAlarmTimeout);
+    countdownAlarmTimeout = null;
+  }
+  if (countdownEndTime === null) return;
+  
+  const delay = countdownEndTime - Date.now();
+  if (delay <= 0) {
+    updateCountdownDisplay(0);
+    return;
+  }
+  
+  countdownAlarmTimeout = setTimeout(() => {
+    countdownAlarmTimeout = null;
+    if (countdownEndTime !== null && Date.now() >= countdownEndTime) {
+      updateCountdownDisplay(0);
+    }
+  }, delay);
+}
+
+async function startTimer() {
   timerStartTime = Date.now();
-  
+
   currentSession = {
     id: generateId(),
     startTime: timerStartTime,
     endTime: null,
     duration: 0
   };
-  
+
   if (!currentPuzzle.sessions) {
     currentPuzzle.sessions = [];
   }
   currentPuzzle.sessions.push(currentSession);
-  
-  timerInterval = setInterval(() => {
-    const elapsed = Date.now() - timerStartTime;
-    currentSession.duration = elapsed;
-    document.getElementById('current-time').textContent = formatTime(elapsed);
-    
-    if (countdownTotalDuration !== null) {
-      updateCountdownDisplay(countdownTotalDuration - elapsed);
-    }
-  }, TIMER_UPDATE_INTERVAL);
+
+  // 立即初始化倒计时并启动 interval，避免 await 期间秒数跳变
+  if (document.getElementById('countdown-enabled').checked) {
+    startCountdown();
+  }
+
+  timerInterval = setInterval(tickTimers, TIMER_UPDATE_INTERVAL);
+  tickTimers();
+
+  await unlockAudioPlayback();
+  preloadAudio();
+  requestNotificationPermission();
+  requestScreenWakeLock();
   
   document.getElementById('timer-btn').textContent = '结束计时';
   document.getElementById('timer-btn').classList.remove('start');
   document.getElementById('timer-btn').classList.add('stop');
-  
-  if (document.getElementById('countdown-enabled').checked) {
-    startCountdown();
-  }
 }
 
 function startCountdown() {
   countdownTotalDuration = countdownMinutes * 60 * 1000;
-  countdownEndTime = timerStartTime + countdownTotalDuration;
+  countdownEndTime = Date.now() + countdownTotalDuration;
+  reminderTriggered = false;
   
-  const countdownTimeEl = document.getElementById('countdown-time');
-  countdownTimeEl.textContent = formatTime(countdownTotalDuration);
-  countdownTimeEl.classList.remove('warning', 'danger');
+  updateCountdownDisplay(getCountdownRemaining());
+  scheduleCountdownAlarm();
 }
 
 function updateCountdownDisplay(remaining) {
   if (remaining <= 0) {
-    stopCountdown();
-    showReminder();
+    if (!reminderTriggered) {
+      reminderTriggered = true;
+      stopCountdown();
+      showReminder();
+    }
     return;
   }
   
   const countdownTimeEl = document.getElementById('countdown-time');
-  countdownTimeEl.textContent = formatTime(remaining);
+  countdownTimeEl.textContent = formatCountdownTime(remaining);
   
   if (remaining < 60000) {
     countdownTimeEl.classList.remove('warning');
@@ -695,6 +783,10 @@ function stopCountdown() {
     clearInterval(countdownInterval);
     countdownInterval = null;
   }
+  if (countdownAlarmTimeout) {
+    clearTimeout(countdownAlarmTimeout);
+    countdownAlarmTimeout = null;
+  }
   countdownEndTime = null;
   countdownTotalDuration = null;
 }
@@ -707,6 +799,12 @@ function stopTimer() {
   
   stopCountdown();
   timerStartTime = null;
+  reminderTriggered = false;
+  
+  if (wakeLock) {
+    wakeLock.release().catch(() => {});
+    wakeLock = null;
+  }
   
   // 重置后台计时状态
   backgroundTimerStart = null;
@@ -739,7 +837,7 @@ function stopTimer() {
       presetBtn.classList.add('active');
     }
     // 更新剩余时间显示（保持上次设置的时间）
-    document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
+    document.getElementById('countdown-time').textContent = formatCountdownTime(countdownMinutes * 60 * 1000);
     document.getElementById('countdown-time').classList.remove('warning', 'danger');
   } else {
     document.getElementById('countdown-time').textContent = '--:--:--';
@@ -751,22 +849,23 @@ function stopTimer() {
 // 屏幕常亮和后台计时功能
 // ================================
 
-// 请求屏幕常亮权限
+// 请求屏幕常亮权限（开始计时时申请，避免后台 interval 被过度节流）
 async function requestScreenWakeLock() {
-  if ('wakeLock' in navigator) {
-    try {
-      const wakeLock = await navigator.wakeLock.request('screen');
-      wakeLock.addEventListener('release', () => {
-        console.log('屏幕常亮已释放');
-      });
-      return wakeLock;
-    } catch (err) {
-      console.log('无法获取屏幕常亮:', err.message);
+  if (!('wakeLock' in navigator)) return null;
+  try {
+    if (wakeLock) {
+      await wakeLock.release().catch(() => {});
     }
-  } else {
-    console.log('当前浏览器不支持屏幕常亮API');
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => {
+      console.log('屏幕常亮已释放');
+      wakeLock = null;
+    });
+    return wakeLock;
+  } catch (err) {
+    console.log('无法获取屏幕常亮:', err.message);
+    return null;
   }
-  return null;
 }
 
 // 后台计时状态
@@ -776,49 +875,41 @@ let backgroundTimerPaused = false;
 // 处理应用进入后台
 function handleAppBackground() {
   if (!currentSession || !timerInterval) return;
-  
-  // 记录进入后台的时间
   backgroundTimerStart = Date.now();
   backgroundTimerPaused = false;
-  
-  // 尝试请求屏幕常亮（虽然进入后台后通常会失效）
-  requestScreenWakeLock();
-  
   console.log('应用进入后台，继续后台计时');
 }
 
 // 处理应用恢复前台
-function handleAppForeground() {
-  if (!currentSession || !backgroundTimerStart || backgroundTimerPaused) return;
+async function handleAppForeground() {
+  if (!currentSession || !timerInterval) return;
   
-  // 计算后台停留时间
-  const backgroundDuration = Date.now() - backgroundTimerStart;
+  await unlockAudioPlayback();
+  tickTimers();
   
-  // 更新当前会话的持续时间
-  currentSession.duration += backgroundDuration;
-  
-  // 更新总时间显示
-  updateStats();
-  
-  // 更新当前时间显示
-  document.getElementById('current-time').textContent = formatTime(currentSession.duration);
-  
-  // 检查倒计时是否在后台期间结束
-  if (countdownTotalDuration !== null && timerStartTime !== null) {
-    const elapsed = Date.now() - timerStartTime;
-    const remaining = countdownTotalDuration - elapsed;
+  if (countdownEndTime !== null) {
+    const remaining = getCountdownRemaining();
     if (remaining <= 0) {
-      stopCountdown();
-      showReminder();
+      if (!reminderTriggered) {
+        reminderTriggered = true;
+        stopCountdown();
+        await showReminder();
+      }
     } else {
-      document.getElementById('countdown-time').textContent = formatTime(remaining);
+      document.getElementById('countdown-time').textContent = formatCountdownTime(remaining);
+      scheduleCountdownAlarm();
     }
   }
   
-  console.log(`应用恢复前台，后台计时 ${formatTime(backgroundDuration)}`);
+  if (backgroundTimerStart) {
+    const backgroundDuration = Date.now() - backgroundTimerStart;
+    console.log(`应用恢复前台，后台停留 ${formatTime(backgroundDuration)}`);
+    backgroundTimerStart = null;
+  }
   
-  // 重置后台计时状态
-  backgroundTimerStart = null;
+  if (wakeLock === null && timerInterval) {
+    requestScreenWakeLock();
+  }
 }
 
 function updateVersionDisplay() {
@@ -922,13 +1013,12 @@ function compareVersions(v1, v2) {
 }
 
 async function showReminder() {
-  // 播放防沉迷结束提示音（更响亮、更醒目）
+  // 先发系统通知（移动端后台/锁屏时更可靠）
+  await sendAlarmNotification();
+  
+  await unlockAudioPlayback();
   await playAlarmSound();
   
-  // 发送系统通知（模拟闹铃效果）
-  sendAlarmNotification();
-  
-  // 显示弹窗提醒
   showModal('modal-reminder');
   
   const countdownEnabled = document.getElementById('countdown-enabled');
@@ -964,7 +1054,7 @@ async function init() {
   }
   // 初始化倒计时显示（默认60分钟）- 只有在元素存在时设置
   if (countdownTime) {
-    countdownTime.textContent = formatTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
+    countdownTime.textContent = formatCountdownTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
     countdownTime.classList.remove('warning', 'danger');
   }
   
@@ -1131,7 +1221,7 @@ async function init() {
       countdownEnabled.checked = true;
       document.getElementById('countdown-options').classList.add('show');
       stopCountdown();
-      document.getElementById('countdown-time').textContent = formatTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
+      document.getElementById('countdown-time').textContent = formatCountdownTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
       document.getElementById('countdown-time').classList.remove('warning', 'danger');
       
       showPage('page-detail');
@@ -1262,9 +1352,16 @@ async function init() {
     const options = document.getElementById('countdown-options');
     if (e.target.checked) {
       options.classList.add('show');
+      if (timerInterval) {
+        startCountdown();
+      } else {
+        document.getElementById('countdown-time').textContent = formatCountdownTime(countdownMinutes * 60 * 1000);
+        document.getElementById('countdown-time').classList.remove('warning', 'danger');
+      }
     } else {
       options.classList.remove('show');
       stopCountdown();
+      reminderTriggered = false;
       document.getElementById('countdown-time').textContent = '--:--:--';
       document.getElementById('countdown-time').classList.remove('warning', 'danger');
     }
@@ -1277,7 +1374,7 @@ async function init() {
       countdownMinutes = parseInt(btn.dataset.minutes);
       
       // 更新剩余时间显示
-      document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
+      document.getElementById('countdown-time').textContent = formatCountdownTime(countdownMinutes * 60 * 1000);
       document.getElementById('countdown-time').classList.remove('warning', 'danger');
       
       // 如果计时器正在运行且防沉迷已启用，重新设置倒计时
@@ -1302,7 +1399,7 @@ async function init() {
     countdownMinutes = minutes;
     
     // 更新剩余时间显示
-    document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
+    document.getElementById('countdown-time').textContent = formatCountdownTime(countdownMinutes * 60 * 1000);
     document.getElementById('countdown-time').classList.remove('warning', 'danger');
     
     // 如果计时器正在运行且防沉迷已启用，重新设置倒计时
@@ -1335,26 +1432,14 @@ async function init() {
   
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      // 应用进入后台
-      handleAppBackground();
-    } else {
-      // 应用恢复前台
-      handleAppForeground();
-    }
-  });
-  
-  // 监听页面隐藏（用于iOS）
-  document.addEventListener('webkitvisibilitychange', () => {
-    if (document.webkitHidden) {
       handleAppBackground();
     } else {
       handleAppForeground();
+      if (timerInterval) {
+        requestScreenWakeLock();
+      }
     }
   });
-  
-  // 监听应用被挂起
-  window.addEventListener('blur', handleAppBackground);
-  window.addEventListener('focus', handleAppForeground);
   
   // 统计页面相关函数
   async function calculateTotalTime() {
