@@ -101,8 +101,7 @@ function formatTime(ms) {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-// 倒计时显示：初始 59 算第 1 秒，显示 0 时刚好走完第 60 秒
-// 实际结束时间仍是完整的 countdownMinutes，总时长不变
+// 倒计时显示（运行中）：初始 59 算第 1 秒，显示 0 时刚好走完设定时长
 function formatCountdownTime(ms) {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000) - 1);
   const hours = Math.floor(totalSeconds / 3600);
@@ -837,7 +836,7 @@ function stopTimer() {
       presetBtn.classList.add('active');
     }
     // 更新剩余时间显示（保持上次设置的时间）
-    document.getElementById('countdown-time').textContent = formatCountdownTime(countdownMinutes * 60 * 1000);
+    document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
     document.getElementById('countdown-time').classList.remove('warning', 'danger');
   } else {
     document.getElementById('countdown-time').textContent = '--:--:--';
@@ -1054,7 +1053,7 @@ async function init() {
   }
   // 初始化倒计时显示（默认60分钟）- 只有在元素存在时设置
   if (countdownTime) {
-    countdownTime.textContent = formatCountdownTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
+    countdownTime.textContent = formatTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
     countdownTime.classList.remove('warning', 'danger');
   }
   
@@ -1221,7 +1220,7 @@ async function init() {
       countdownEnabled.checked = true;
       document.getElementById('countdown-options').classList.add('show');
       stopCountdown();
-      document.getElementById('countdown-time').textContent = formatCountdownTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
+      document.getElementById('countdown-time').textContent = formatTime(DEFAULT_COUNTDOWN_MINUTES * 60 * 1000);
       document.getElementById('countdown-time').classList.remove('warning', 'danger');
       
       showPage('page-detail');
@@ -1355,7 +1354,7 @@ async function init() {
       if (timerInterval) {
         startCountdown();
       } else {
-        document.getElementById('countdown-time').textContent = formatCountdownTime(countdownMinutes * 60 * 1000);
+        document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
         document.getElementById('countdown-time').classList.remove('warning', 'danger');
       }
     } else {
@@ -1374,7 +1373,7 @@ async function init() {
       countdownMinutes = parseInt(btn.dataset.minutes);
       
       // 更新剩余时间显示
-      document.getElementById('countdown-time').textContent = formatCountdownTime(countdownMinutes * 60 * 1000);
+      document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
       document.getElementById('countdown-time').classList.remove('warning', 'danger');
       
       // 如果计时器正在运行且防沉迷已启用，重新设置倒计时
@@ -1399,7 +1398,7 @@ async function init() {
     countdownMinutes = minutes;
     
     // 更新剩余时间显示
-    document.getElementById('countdown-time').textContent = formatCountdownTime(countdownMinutes * 60 * 1000);
+    document.getElementById('countdown-time').textContent = formatTime(countdownMinutes * 60 * 1000);
     document.getElementById('countdown-time').classList.remove('warning', 'danger');
     
     // 如果计时器正在运行且防沉迷已启用，重新设置倒计时
