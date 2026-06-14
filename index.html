@@ -271,29 +271,70 @@
         </div>
       </div>
       
-      <!-- 品牌分布 -->
-      <div class="section">
-        <h2 class="section-title">📦 品牌分布</h2>
-        <div id="brand-distribution" class="distribution-list">
-          <div class="empty-state">暂无数据</div>
+      <!-- 分布和日历并排显示 -->
+      <div class="stats-row">
+        <!-- 品牌分布 -->
+        <div class="section section-half">
+          <h2 class="section-title">📦 品牌分布</h2>
+          <div id="brand-distribution" class="distribution-list">
+            <div class="empty-state">暂无数据</div>
+          </div>
+        </div>
+        
+        <!-- 片数分布 -->
+        <div class="section section-half">
+          <h2 class="section-title">📊 片数分布</h2>
+          <div id="pieces-distribution" class="distribution-list">
+            <div class="empty-state">暂无数据</div>
+          </div>
+        </div>
+        
+        <!-- 月度拼图时间统计 -->
+        <div class="section section-half">
+          <h2 class="section-title">📅 月度统计 <span id="calendar-current-period" class="period-badge">2024年1月</span></h2>
+          <div id="monthly-calendar" class="calendar-container-small">
+            <div class="calendar-header-small">
+              <button id="calendar-prev" class="btn-icon-small">←</button>
+              <span id="calendar-month-year">2024年1月</span>
+              <button id="calendar-next" class="btn-icon-small">→</button>
+            </div>
+            <div class="calendar-weekdays-small">
+              <span>日</span>
+              <span>一</span>
+              <span>二</span>
+              <span>三</span>
+              <span>四</span>
+              <span>五</span>
+              <span>六</span>
+            </div>
+            <div id="calendar-grid" class="calendar-grid-small">
+            </div>
+            <div class="calendar-legend-small">
+              <span class="legend-item-small">
+                <span class="legend-block-small level-0"></span>
+                <span>无</span>
+              </span>
+              <span class="legend-item-small">
+                <span class="legend-block-small level-1"></span>
+                <span>&lt;30</span>
+              </span>
+              <span class="legend-item-small">
+                <span class="legend-block-small level-2"></span>
+                <span>30-60</span>
+              </span>
+              <span class="legend-item-small">
+                <span class="legend-block-small level-3"></span>
+                <span>1-2h</span>
+              </span>
+              <span class="legend-item-small">
+                <span class="legend-block-small level-4"></span>
+                <span>&gt;2h</span>
+              </span>
+            </div>
+          </div>
         </div>
       </div>
       
-      <!-- 片数分布 -->
-      <div class="section">
-        <h2 class="section-title">📊 片数分布</h2>
-        <div id="pieces-distribution" class="distribution-list">
-          <div class="empty-state">暂无数据</div>
-        </div>
-      </div>
-      
-      <!-- 拼图列表（可编辑时长） -->
-      <div class="section">
-        <h2 class="section-title">📋 拼图记录</h2>
-        <div id="stats-puzzle-list" class="stats-puzzle-list">
-          <div class="empty-state">暂无拼图</div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -306,19 +347,6 @@
       <div class="modal-actions">
         <button id="cancel-edit-time" class="btn-secondary">取消</button>
         <button id="confirm-edit-time" class="btn-primary">确认</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 编辑单条记录时长弹窗 -->
-  <div id="modal-edit-session" class="modal">
-    <div class="modal-content">
-      <h3>编辑计时记录</h3>
-      <p id="edit-session-puzzle-name"></p>
-      <input type="text" id="edit-session-time-input" class="input-text" placeholder="01:30:00" maxlength="8">
-      <div class="modal-actions">
-        <button id="cancel-edit-session" class="btn-secondary">取消</button>
-        <button id="confirm-edit-session" class="btn-primary">确认</button>
       </div>
     </div>
   </div>
@@ -481,6 +509,22 @@ document.getElementById('btn-update').addEventListener('click', hideUpdateNotifi
   window.haptic = haptic;
   console.log('Haptic 库已加载');
 </script>
+
+<!-- 调试日志面板 -->
+<button id="debug-toggle-btn" class="debug-toggle-btn" title="调试日志">🐞</button>
+<div id="debug-panel" class="debug-panel">
+  <div class="debug-panel-header">
+    <h3>调试日志</h3>
+    <button id="debug-close-btn" class="debug-close-btn">✕</button>
+  </div>
+  <div id="debug-status-chips" class="debug-status-chips"></div>
+  <p class="debug-hint">绿=正常 · 黄=待确认。切后台/等倒计时到期后查看各模块是否按预期触发。</p>
+  <div id="debug-log-list" class="debug-log-list">暂无日志</div>
+  <div class="debug-panel-actions">
+    <button id="debug-copy-btn" class="btn-secondary btn-small">复制日志</button>
+    <button id="debug-clear-btn" class="btn-secondary btn-small">清空</button>
+  </div>
+</div>
 
 </body>
 </html>

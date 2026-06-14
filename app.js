@@ -5,7 +5,8 @@ const DB_NAME = 'PuzzleTimerDB';
 const DB_VERSION = 1;
 const DEFAULT_COUNTDOWN_MINUTES = 60;
 const TIMER_UPDATE_INTERVAL = 1000; // 1秒
-const APP_VERSION = '1.1.3'; // 与 sw.js 保持一致
+const APP_VERSION = '1.1.4'; // 与 sw.js 保持一致
+const DEBUG_LOG_MAX = 200;
 
 // ================================
 // 全局状态变量
@@ -25,6 +26,172 @@ let silentUnlockAudio = null;
 let wakeLock = null;
 
 // ================================
+// 调试日志（手机端可查看）
+// ================================
+const debugLogs = [];
+
+function debugLog(category, message, detail) {
+  const entry = {
+    time: new Date(),
+    category,
+    message,
+    detail: detail ?? null
+  };
+  debugLogs.push(entry);
+  if (debugLogs.length > DEBUG_LOG_MAX) {
+    debugLogs.shift();
+  }
+
+  const detailStr = detail != null
+    ? ` ${typeof detail === 'object' ? JSON.stringify(detail) : detail}`
+    : '';
+  console.log(`[${category}] ${message}${detailStr}`);
+
+  refreshDebugPanel();
+}
+
+function getDebugStatus() {
+  return {
+    timerRunning: !!timerInterval,
+    wakeLock: wakeLock ? 'active' : ('wakeLock' in navigator ? 'inactive' : 'unsupported'),
+    visibility: document.hidden ? 'hidden' : 'visible',
+    countdownActive: countdownEndTime !== null,
+    countdownRemainingMs: countdownEndTime !== null ? getCountdownRemaining() : null,
+    alarmScheduled: !!countdownAlarmTimeout,
+    reminderTriggered,
+    notificationPermission: 'Notification' in window ? Notification.permission : 'unsupported'
+  };
+}
+
+function formatDebugTime(date) {
+  return date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function renderDebugLogs() {
+  const container = document.getElementById('debug-log-list');
+  if (!container) return;
+
+  if (debugLogs.length === 0) {
+    container.textContent = '暂无日志，开始计时或切换前后台后会出现记录。';
+    return;
+  }
+
+  container.replaceChildren();
+  debugLogs.slice().reverse().forEach((entry) => {
+    const line = document.createElement('div');
+    line.className = `debug-log-line debug-log-${entry.category}`;
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'debug-log-time';
+    timeSpan.textContent = formatDebugTime(entry.time);
+
+    const catSpan = document.createElement('span');
+    catSpan.className = 'debug-log-cat';
+    catSpan.textContent = entry.category;
+
+    const msgSpan = document.createElement('span');
+    msgSpan.className = 'debug-log-msg';
+    msgSpan.textContent = entry.message;
+
+    line.appendChild(timeSpan);
+    line.appendChild(catSpan);
+    line.appendChild(msgSpan);
+
+    if (entry.detail != null) {
+      const detailSpan = document.createElement('span');
+      detailSpan.className = 'debug-log-detail';
+      detailSpan.textContent = typeof entry.detail === 'object'
+        ? JSON.stringify(entry.detail)
+        : String(entry.detail);
+      line.appendChild(detailSpan);
+    }
+
+    container.appendChild(line);
+  });
+}
+
+function renderDebugStatus() {
+  const container = document.getElementById('debug-status-chips');
+  if (!container) return;
+
+  const status = getDebugStatus();
+  const remaining = status.countdownRemainingMs;
+  const chips = [
+    { label: '计时', value: status.timerRunning ? '运行中' : '未开始', ok: status.timerRunning },
+    { label: '常亮', value: status.wakeLock, ok: status.wakeLock === 'active' },
+    { label: '页面', value: status.visibility, ok: status.visibility === 'visible' },
+    { label: '倒计时', value: status.countdownActive
+      ? (remaining != null ? formatCountdownTime(remaining) : '--')
+      : '未启用', ok: status.countdownActive },
+    { label: '闹钟', value: status.alarmScheduled ? '已调度' : '未调度', ok: status.alarmScheduled },
+    { label: '通知', value: status.notificationPermission, ok: status.notificationPermission === 'granted' }
+  ];
+
+  container.replaceChildren();
+  chips.forEach(({ label, value, ok }) => {
+    const chip = document.createElement('span');
+    chip.className = `debug-status-chip ${ok ? 'ok' : 'warn'}`;
+    chip.textContent = `${label}: ${value}`;
+    container.appendChild(chip);
+  });
+}
+
+function refreshDebugPanel() {
+  const panel = document.getElementById('debug-panel');
+  if (!panel || !panel.classList.contains('show')) return;
+  renderDebugStatus();
+  renderDebugLogs();
+}
+
+function initDebugPanel() {
+  const toggleBtn = document.getElementById('debug-toggle-btn');
+  const panel = document.getElementById('debug-panel');
+  const closeBtn = document.getElementById('debug-close-btn');
+  const clearBtn = document.getElementById('debug-clear-btn');
+  const copyBtn = document.getElementById('debug-copy-btn');
+
+  if (!toggleBtn || !panel) return;
+
+  toggleBtn.addEventListener('click', () => {
+    panel.classList.add('show');
+    renderDebugStatus();
+    renderDebugLogs();
+    debugLog('system', '打开调试面板', getDebugStatus());
+  });
+
+  closeBtn?.addEventListener('click', () => {
+    panel.classList.remove('show');
+  });
+
+  clearBtn?.addEventListener('click', () => {
+    debugLogs.length = 0;
+    renderDebugLogs();
+    renderDebugStatus();
+  });
+
+  copyBtn?.addEventListener('click', async () => {
+    const status = getDebugStatus();
+    const header = `拼图计时器调试日志 v${APP_VERSION}\n状态: ${JSON.stringify(status)}\n\n`;
+    const body = debugLogs.map((entry) => {
+      const detail = entry.detail != null
+        ? ` | ${typeof entry.detail === 'object' ? JSON.stringify(entry.detail) : entry.detail}`
+        : '';
+      return `${formatDebugTime(entry.time)} [${entry.category}] ${entry.message}${detail}`;
+    }).join('\n');
+    const text = header + body;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      debugLog('system', '日志已复制到剪贴板');
+    } catch (e) {
+      debugLog('system', '复制失败，请手动选择日志内容', e.message);
+    }
+  });
+
+  debugLog('system', '调试面板已就绪', { version: APP_VERSION });
+}
+
+// ================================
 // 工具函数
 // ================================
 
@@ -32,14 +199,12 @@ let wakeLock = null;
 function handleError(error, context = 'Unknown') {
   console.error(`[${context}] Error:`, error);
   
-  // 在生产环境中，可以发送错误到监控服务
-  // 这里仅记录到控制台
   if (typeof error === 'object' && error.message) {
     console.error(`Error message: ${error.message}`);
+    debugLog('error', `${context}: ${error.message}`);
+  } else {
+    debugLog('error', `${context}`, String(error));
   }
-  
-  // 可以添加用户友好的错误提示
-  // showToast(`操作失败: ${context}`);
 }
 
 // 安全执行函数，捕获并处理异常
@@ -405,7 +570,7 @@ async function requestNotificationPermission() {
 function sendAlarmNotification() {
   return safeExecute(async () => {
     if (!('Notification' in window)) {
-      console.log('当前浏览器不支持通知功能');
+      debugLog('notification', '浏览器不支持通知');
       return;
     }
     
@@ -414,11 +579,10 @@ function sendAlarmNotification() {
       permission = await Notification.requestPermission();
     }
     if (permission !== 'granted') {
-      console.log('用户未授权通知权限');
+      debugLog('notification', '通知权限未授权', permission);
       return;
     }
     
-    // 创建通知
     const notification = new Notification('拼图计时器', {
       body: '防沉迷时间已到！休息一下吧！',
       icon: 'icons/icon-192.png',
@@ -435,6 +599,7 @@ function sendAlarmNotification() {
       notification.close();
     };
     
+    debugLog('notification', '系统通知已发送', { hidden: document.hidden });
     return notification;
   }, 'sendAlarmNotification');
 }
@@ -633,10 +798,12 @@ function renderSessions() {
     return;
   }
   
-  const sessions = [...currentPuzzle.sessions].reverse();
+  const sessions = currentPuzzle.sessions
+    .map((session, index) => ({ session, index }))
+    .reverse();
   
   // 使用DOM API创建会话项
-  sessions.forEach(session => {
+  sessions.forEach(({ session, index: sessionIndex }) => {
     const sessionItem = document.createElement('div');
     sessionItem.className = 'session-item';
     
@@ -661,16 +828,33 @@ function renderSessions() {
       centerDiv.appendChild(noteSpan);
     }
     
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'session-actions';
+    
     const dateDiv = document.createElement('div');
     dateDiv.className = 'session-date';
     dateDiv.textContent = formatDate(session.date || session.startTime);
     
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn-delete-item btn-delete-session';
+    deleteBtn.dataset.sessionIndex = sessionIndex;
+    deleteBtn.title = '删除记录';
+    deleteBtn.textContent = '×';
+    
+    actionsDiv.appendChild(dateDiv);
+    actionsDiv.appendChild(deleteBtn);
+    
     sessionItem.appendChild(timeDiv);
     sessionItem.appendChild(centerDiv);
-    sessionItem.appendChild(dateDiv);
+    sessionItem.appendChild(actionsDiv);
     
     sessionList.appendChild(sessionItem);
   });
+}
+
+function openDeleteSessionModal(puzzleId, sessionIndex) {
+  window.deleteSessionData = { puzzleId, sessionIndex };
+  showModal('modal-delete-session');
 }
 
 function getCountdownRemaining() {
@@ -699,20 +883,33 @@ function scheduleCountdownAlarm() {
   
   const delay = countdownEndTime - Date.now();
   if (delay <= 0) {
+    debugLog('countdown', '闹钟调度：已到期，立即触发', { delay });
     updateCountdownDisplay(0);
     return;
   }
   
   countdownAlarmTimeout = setTimeout(() => {
     countdownAlarmTimeout = null;
+    debugLog('countdown', 'setTimeout 闹钟触发', {
+      endTime: new Date(countdownEndTime).toLocaleTimeString('zh-CN'),
+      now: new Date().toLocaleTimeString('zh-CN'),
+      hidden: document.hidden
+    });
     if (countdownEndTime !== null && Date.now() >= countdownEndTime) {
       updateCountdownDisplay(0);
     }
   }, delay);
+
+  debugLog('countdown', '闹钟已调度', {
+    delayMs: delay,
+    fireAt: new Date(countdownEndTime).toLocaleTimeString('zh-CN'),
+    hidden: document.hidden
+  });
 }
 
 async function startTimer() {
   timerStartTime = Date.now();
+  debugLog('timer', '开始计时', { startTime: new Date(timerStartTime).toLocaleTimeString('zh-CN') });
 
   currentSession = {
     id: generateId(),
@@ -749,6 +946,12 @@ function startCountdown() {
   countdownEndTime = Date.now() + countdownTotalDuration;
   reminderTriggered = false;
   
+  debugLog('countdown', '倒计时启动', {
+    minutes: countdownMinutes,
+    endTime: new Date(countdownEndTime).toLocaleTimeString('zh-CN'),
+    display: formatCountdownTime(getCountdownRemaining())
+  });
+
   updateCountdownDisplay(getCountdownRemaining());
   scheduleCountdownAlarm();
 }
@@ -756,6 +959,10 @@ function startCountdown() {
 function updateCountdownDisplay(remaining) {
   if (remaining <= 0) {
     if (!reminderTriggered) {
+      debugLog('countdown', '倒计时到期，触发提醒', {
+        source: document.hidden ? '后台/不可见' : '前台',
+        wakeLock: wakeLock ? 'active' : 'inactive'
+      });
       reminderTriggered = true;
       stopCountdown();
       showReminder();
@@ -786,6 +993,9 @@ function stopCountdown() {
     clearTimeout(countdownAlarmTimeout);
     countdownAlarmTimeout = null;
   }
+  if (countdownEndTime !== null) {
+    debugLog('countdown', '倒计时停止');
+  }
   countdownEndTime = null;
   countdownTotalDuration = null;
 }
@@ -796,11 +1006,16 @@ function stopTimer() {
     timerInterval = null;
   }
   
+  debugLog('timer', '结束计时', {
+    elapsed: timerStartTime ? formatTime(Date.now() - timerStartTime) : '--'
+  });
+
   stopCountdown();
   timerStartTime = null;
   reminderTriggered = false;
   
   if (wakeLock) {
+    debugLog('wakeLock', '结束计时，释放常亮');
     wakeLock.release().catch(() => {});
     wakeLock = null;
   }
@@ -850,19 +1065,25 @@ function stopTimer() {
 
 // 请求屏幕常亮权限（开始计时时申请，避免后台 interval 被过度节流）
 async function requestScreenWakeLock() {
-  if (!('wakeLock' in navigator)) return null;
+  if (!('wakeLock' in navigator)) {
+    debugLog('wakeLock', '设备不支持 Wake Lock API');
+    return null;
+  }
   try {
     if (wakeLock) {
       await wakeLock.release().catch(() => {});
     }
     wakeLock = await navigator.wakeLock.request('screen');
+    debugLog('wakeLock', '屏幕常亮已启用', { hidden: document.hidden });
     wakeLock.addEventListener('release', () => {
-      console.log('屏幕常亮已释放');
+      debugLog('wakeLock', '屏幕常亮已释放（系统或切页）', { hidden: document.hidden });
       wakeLock = null;
+      refreshDebugPanel();
     });
+    refreshDebugPanel();
     return wakeLock;
   } catch (err) {
-    console.log('无法获取屏幕常亮:', err.message);
+    debugLog('wakeLock', '屏幕常亮申请失败', err.message);
     return null;
   }
 }
@@ -876,19 +1097,31 @@ function handleAppBackground() {
   if (!currentSession || !timerInterval) return;
   backgroundTimerStart = Date.now();
   backgroundTimerPaused = false;
-  console.log('应用进入后台，继续后台计时');
+  debugLog('visibility', '进入后台', {
+    wakeLock: wakeLock ? 'active' : 'inactive',
+    countdownRemaining: countdownEndTime ? formatCountdownTime(getCountdownRemaining()) : '--',
+    alarmScheduled: !!countdownAlarmTimeout
+  });
 }
 
 // 处理应用恢复前台
 async function handleAppForeground() {
   if (!currentSession || !timerInterval) return;
   
+  const bgDuration = backgroundTimerStart ? Date.now() - backgroundTimerStart : 0;
+  debugLog('visibility', '回到前台', {
+    backgroundDuration: bgDuration ? formatTime(bgDuration) : '--',
+    wakeLock: wakeLock ? 'active' : 'inactive',
+    countdownRemaining: countdownEndTime ? formatCountdownTime(getCountdownRemaining()) : '--'
+  });
+
   await unlockAudioPlayback();
   tickTimers();
   
   if (countdownEndTime !== null) {
     const remaining = getCountdownRemaining();
     if (remaining <= 0) {
+      debugLog('countdown', '前台校准：倒计时已过期，补触发提醒', { remaining });
       if (!reminderTriggered) {
         reminderTriggered = true;
         stopCountdown();
@@ -901,14 +1134,15 @@ async function handleAppForeground() {
   }
   
   if (backgroundTimerStart) {
-    const backgroundDuration = Date.now() - backgroundTimerStart;
-    console.log(`应用恢复前台，后台停留 ${formatTime(backgroundDuration)}`);
     backgroundTimerStart = null;
   }
   
   if (wakeLock === null && timerInterval) {
+    debugLog('wakeLock', '前台恢复，重新申请常亮');
     requestScreenWakeLock();
   }
+
+  refreshDebugPanel();
 }
 
 function updateVersionDisplay() {
@@ -1012,11 +1246,18 @@ function compareVersions(v1, v2) {
 }
 
 async function showReminder() {
-  // 先发系统通知（移动端后台/锁屏时更可靠）
+  debugLog('alarm', '开始播放提醒', {
+    hidden: document.hidden,
+    wakeLock: wakeLock ? 'active' : 'inactive',
+    notificationPermission: 'Notification' in window ? Notification.permission : 'unsupported'
+  });
+
   await sendAlarmNotification();
   
   await unlockAudioPlayback();
   await playAlarmSound();
+  
+  debugLog('alarm', '提醒流程完成（通知+音频）');
   
   showModal('modal-reminder');
   
@@ -1029,6 +1270,7 @@ async function showReminder() {
 
 async function init() {
   await openDB();
+  initDebugPanel();
   
   const puzzles = await getPuzzles();
   renderPuzzleList(puzzles);
@@ -1068,38 +1310,26 @@ async function init() {
     showPage('page-home');
   });
   
-  // 取消编辑单条记录
-  document.getElementById('cancel-edit-session').addEventListener('click', () => {
-    hideModal('modal-edit-session');
+  // 日历导航按钮（使用事件委托）
+  document.addEventListener('click', (e) => {
+    if (e.target.id === 'calendar-prev') {
+      prevMonth();
+    } else if (e.target.id === 'calendar-next') {
+      nextMonth();
+    }
   });
   
-  // 确认编辑单条记录
-  document.getElementById('confirm-edit-session').addEventListener('click', async () => {
-    const input = document.getElementById('edit-session-time-input');
-    const timeStr = input.value.trim();
-    const milliseconds = parseTime(timeStr);
+  document.getElementById('session-list').addEventListener('click', (e) => {
+    const deleteBtn = e.target.closest('.btn-delete-session');
+    if (!deleteBtn || !currentPuzzle) return;
     
-    if (milliseconds === null) {
-      alert('请输入有效的时间格式（如：01:30:00）');
-      return;
-    }
-    
-    if (window.editSessionData) {
-      const { puzzleId, sessionIndex } = window.editSessionData;
-      const puzzles = await getPuzzles();
-      const puzzle = puzzles.find(p => p.id === puzzleId);
-      if (puzzle && puzzle.sessions && puzzle.sessions[sessionIndex]) {
-        puzzle.sessions[sessionIndex].duration = milliseconds;
-        await savePuzzle(puzzle);
-      }
-    }
-    
-    hideModal('modal-edit-session');
-    await renderStatsPage();
+    e.stopPropagation();
+    openDeleteSessionModal(currentPuzzle.id, parseInt(deleteBtn.dataset.sessionIndex, 10));
   });
   
   // 取消删除记录
   document.getElementById('cancel-delete-session').addEventListener('click', () => {
+    window.deleteSessionData = null;
     hideModal('modal-delete-session');
   });
   
@@ -1112,11 +1342,17 @@ async function init() {
       if (puzzle && puzzle.sessions) {
         puzzle.sessions.splice(sessionIndex, 1);
         await savePuzzle(puzzle);
+        
+        if (currentPuzzle && currentPuzzle.id === puzzleId) {
+          currentPuzzle = puzzle;
+          updateStats();
+          renderSessions();
+        }
       }
     }
     
+    window.deleteSessionData = null;
     hideModal('modal-delete-session');
-    await renderStatsPage();
   });
   
   document.getElementById('add-puzzle-btn').addEventListener('click', async () => {
@@ -1430,6 +1666,7 @@ async function init() {
   });
   
   document.addEventListener('visibilitychange', () => {
+    debugLog('visibility', document.hidden ? 'document.hidden=true' : 'document.hidden=false');
     if (document.hidden) {
       handleAppBackground();
     } else {
@@ -1543,8 +1780,11 @@ async function init() {
     const piecesDistribution = await getPiecesDistribution();
     renderDistribution('pieces-distribution', piecesDistribution);
     
-    // 更新拼图列表
-    renderStatsPuzzleList(puzzles);
+    // 渲染月度日历
+    const today = new Date();
+    currentCalendarYear = today.getFullYear();
+    currentCalendarMonth = today.getMonth();
+    await renderCalendar(currentCalendarYear, currentCalendarMonth);
   }
   
   function renderDistribution(containerId, distribution) {
@@ -1577,97 +1817,139 @@ async function init() {
     }).join('');
   }
   
-  function renderStatsPuzzleList(puzzles) {
-    const container = document.getElementById('stats-puzzle-list');
+  // 日历相关变量
+  let currentCalendarYear = new Date().getFullYear();
+  let currentCalendarMonth = new Date().getMonth();
+  
+  // 获取某天的拼图时间（毫秒）
+  async function getDailyPuzzleTime(date) {
+    const dateStr = date.toISOString().split('T')[0];
+    const puzzles = await getPuzzles();
     
-    if (puzzles.length === 0) {
-      container.innerHTML = '<div class="empty-state">暂无拼图</div>';
-      return;
-    }
-    
-    // 创建包含所有会话的列表
-    const allSessions = [];
+    let totalTime = 0;
     puzzles.forEach(puzzle => {
-      if (puzzle.sessions && puzzle.sessions.length > 0) {
-        puzzle.sessions.forEach((session, index) => {
-          allSessions.push({
-            puzzleId: puzzle.id,
-            puzzleName: puzzle.name,
-            puzzleBrand: puzzle.brand,
-            puzzlePieces: puzzle.pieces,
-            sessionIndex: index,
-            duration: session.duration || 0,
-            date: session.date || '',
-            adjusted: session.adjusted || false,
-            adjustMinutes: session.adjustMinutes || 0,
-            note: session.note || '',
-            type: session.type || 'timer'
-          });
+      if (puzzle.sessions) {
+        puzzle.sessions.forEach(session => {
+          const sessionDate = new Date(session.startTime).toISOString().split('T')[0];
+          if (sessionDate === dateStr) {
+            totalTime += session.duration || 0;
+          }
         });
       }
     });
     
-    // 按日期排序（最新的在前）
-    allSessions.sort((a, b) => new Date(b.date) - new Date(a.date));
-    
-    container.innerHTML = allSessions.map(session => {
-      let timeDisplay = formatTime(session.duration);
-      let timeClass = 'stats-puzzle-time';
-      if (session.type === 'adjustment') {
-        const sign = session.adjustMinutes > 0 ? '+' : '-';
-        timeDisplay = sign + formatTime(Math.abs(session.duration));
-        timeClass = 'stats-puzzle-time stats-puzzle-time-adjusted';
-      }
-      let metaInfo = `${session.puzzleBrand || ''}${session.puzzleBrand && session.puzzlePieces ? ' · ' : ''}${session.puzzlePieces ? session.puzzlePieces + '片' : ''}${session.date ? ' · ' + formatDate(session.date) : ''}`;
-      if (session.type === 'adjustment' && session.note) {
-        metaInfo += ` · ${session.note}`;
-      }
-      return `
-        <div class="stats-puzzle-item">
-          <div class="stats-puzzle-info">
-            <div class="stats-puzzle-name">${escapeHtml(session.puzzleName)}${session.type === 'adjustment' ? ' ✏️' : ''}</div>
-            <div class="stats-puzzle-meta">${metaInfo}</div>
-          </div>
-          <div class="${timeClass}">${timeDisplay}</div>
-          <div class="stats-puzzle-actions">
-            <button class="stats-puzzle-action-btn" onclick="editSession('${session.puzzleId}', ${session.sessionIndex}, '${escapeHtml(session.puzzleName)}')" title="编辑">✏️</button>
-            <button class="stats-puzzle-action-btn delete" onclick="deleteSession('${session.puzzleId}', ${session.sessionIndex})" title="删除">🗑️</button>
-          </div>
-        </div>
-      `;
-    }).join('');
+    return totalTime;
   }
   
-  function formatDate(dateStr) {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    const hour = date.getHours().toString().padStart(2, '0');
-    const minute = date.getMinutes().toString().padStart(2, '0');
-    return `${month}月${day}日 ${hour}:${minute}`;
+  // 获取某月所有天的拼图时间
+  async function getMonthlyPuzzleData(year, month) {
+    const data = {};
+    const puzzles = await getPuzzles();
+    
+    puzzles.forEach(puzzle => {
+      if (puzzle.sessions) {
+        puzzle.sessions.forEach(session => {
+          const sessionDate = new Date(session.startTime);
+          const sessionYear = sessionDate.getFullYear();
+          const sessionMonth = sessionDate.getMonth();
+          
+          if (sessionYear === year && sessionMonth === month) {
+            const dateStr = sessionDate.toISOString().split('T')[0];
+            if (!data[dateStr]) {
+              data[dateStr] = 0;
+            }
+            data[dateStr] += session.duration || 0;
+          }
+        });
+      }
+    });
+    
+    return data;
   }
   
-  window.editSession = function(puzzleId, sessionIndex, puzzleName) {
-    window.editSessionData = { puzzleId, sessionIndex };
-    document.getElementById('edit-session-puzzle-name').textContent = puzzleName;
+  // 获取时间等级（0-4）
+  function getTimeLevel(milliseconds) {
+    const minutes = milliseconds / 60000;
+    if (minutes === 0) return 0;
+    if (minutes < 30) return 1;
+    if (minutes < 60) return 2;
+    if (minutes < 120) return 3;
+    return 4;
+  }
+  
+  // 渲染日历
+  async function renderCalendar(year, month) {
+    const monthlyData = await getMonthlyPuzzleData(year, month);
+    const grid = document.getElementById('calendar-grid');
+    const monthYear = document.getElementById('calendar-month-year');
+    const periodBadge = document.getElementById('calendar-current-period');
     
-    // 获取当前会话时长
-    const puzzles = JSON.parse(localStorage.getItem('puzzles') || '[]');
-    const puzzle = puzzles.find(p => p.id === puzzleId);
-    let currentDuration = 0;
-    if (puzzle && puzzle.sessions && puzzle.sessions[sessionIndex]) {
-      currentDuration = puzzle.sessions[sessionIndex].duration || 0;
+    // 更新年月显示
+    const periodText = `${year}年${month + 1}月`;
+    monthYear.textContent = periodText;
+    if (periodBadge) {
+      periodBadge.textContent = periodText;
     }
     
-    document.getElementById('edit-session-time-input').value = formatTime(currentDuration);
-    showModal('modal-edit-session');
-  };
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    const firstDayOfWeek = firstDay.getDay(); // 0-6
+    const totalDays = lastDay.getDate();
+    
+    let html = '';
+    
+    // 填充上月空白
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      html += '<div class="calendar-day empty"></div>';
+    }
+    
+    // 填充当月日期
+    for (let day = 1; day <= totalDays; day++) {
+      const date = new Date(year, month, day);
+      const dateStr = date.toISOString().split('T')[0];
+      const time = monthlyData[dateStr] || 0;
+      const level = getTimeLevel(time);
+      
+      let classes = `calendar-day level-${level}`;
+      if (dateStr === todayStr) {
+        classes += ' today';
+      }
+      
+      const tooltipText = time > 0 ? `${formatTime(time)}` : '无拼图记录';
+      
+      html += `
+        <div class="${classes}" title="${escapeHtml(tooltipText)}">
+          ${day}
+          <div class="calendar-tooltip">${escapeHtml(tooltipText)}</div>
+        </div>
+      `;
+    }
+    
+    grid.innerHTML = html;
+  }
   
-  window.deleteSession = function(puzzleId, sessionIndex) {
-    window.deleteSessionData = { puzzleId, sessionIndex };
-    showModal('modal-delete-session');
-  };
+  // 日历导航
+  async function prevMonth() {
+    currentCalendarMonth--;
+    if (currentCalendarMonth < 0) {
+      currentCalendarMonth = 11;
+      currentCalendarYear--;
+    }
+    await renderCalendar(currentCalendarYear, currentCalendarMonth);
+  }
+  
+  async function nextMonth() {
+    currentCalendarMonth++;
+    if (currentCalendarMonth > 11) {
+      currentCalendarMonth = 0;
+      currentCalendarYear++;
+    }
+    await renderCalendar(currentCalendarYear, currentCalendarMonth);
+  }
+  
 }
 
 if (document.readyState === 'loading') {
